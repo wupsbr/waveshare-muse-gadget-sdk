@@ -78,6 +78,32 @@ tools/muse/board.sh flash s185c
 
 **5. Talk.** Hold **BOOT**, speak, let go.
 
+## Using Claude Code? Let it do the work
+
+This repo is set up for [Claude Code](https://claude.com/claude-code). [`CLAUDE.md`](CLAUDE.md) gives it the boards, the build and flash flow, how to read logs without resetting the board, the hardware traps and, above all, the rules that keep your token and keys out of chat, logs and git. The **`flash-muse-board`** skill (`.claude/skills/`) does the whole flash: it finds the board, backs it up, identifies the model, builds, flashes and checks the boot log.
+
+```sh
+git clone https://github.com/wupsbr/waveshare-muse-gadget-sdk && cd waveshare-muse-gadget-sdk
+cp secrets/muse_sdk_token.example secrets/muse_sdk_token    # paste your token yourself, not in the chat
+claude
+```
+
+Then just ask:
+
+> I plugged in a board. Find out which one it is and flash Muse on it.
+
+> Watch the serial log and tell me when it's ready to pair.
+
+> The screen froze after a while. Find out why.
+
+> Make the replies use my ElevenLabs voice `<voice id>`.
+
+> Add support for my Waveshare ESP32-S3-Touch-AMOLED-2.06.
+
+> What's new upstream since our last sync? Merge what's useful.
+
+Claude asks before anything destructive, like `erase-flash` or overwriting a backup. Flashing needs the USB port, so run Claude outside a sandbox, or allow the esptool commands.
+
 ## Hardware notes
 
 Things that cost us time, so they don't cost you:
@@ -103,6 +129,7 @@ esp32/                                   Meta's ESP32 Device SDK, plus:
   devices/sdkconfig.muse-waveshare-s3-*  board overlays
   tools/muse/secrets.py                  secrets → build sdkconfig
 secrets/                                 your token and keys (gitignored)
+CLAUDE.md, .claude/skills/               guidance and a flash skill for Claude Code
 linux/  skills/                          upstream, unchanged
 README.meta.md                           upstream README
 ```
@@ -121,6 +148,12 @@ git fetch upstream && git merge upstream/main
 - Your **SDK token and ElevenLabs key are compiled into the firmware.** Don't share a `build-*/` directory or a flashed image. If a key leaks, revoke it (gadgets.muse.ai, elevenlabs.io) and rebuild.
 - Pairing is community pairing (button press, no manufacturer attestation): pair on a network you trust.
 - Consider `CONFIG_HOMEHUB_NVS_ENCRYPTION` so Wi-Fi credentials and device tokens aren't readable from flash.
+
+## Author
+
+**David Ruiz** — [wupsbr@gmail.com](mailto:wupsbr@gmail.com)
+
+Building something with Muse gadgets, or got one of these boards talking? Let's keep in touch: [linkedin.com/in/wupsbr](https://www.linkedin.com/in/wupsbr/). Issues and pull requests are welcome.
 
 ## License and credits
 

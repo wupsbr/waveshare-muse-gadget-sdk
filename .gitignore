@@ -16,8 +16,10 @@ __pycache__/
 .venv/
 build/
 
-# Claude Code
-.claude/
+# Claude Code: local settings stay out; the shared skills are tracked
+!.claude/
+.claude/*
+!.claude/skills/
 # Interactive simulator screenshot.
 muse-simulator.ppm
 
