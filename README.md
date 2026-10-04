@@ -62,10 +62,10 @@ Muse now reacts to the world a little, like a toy that gets dizzy when you shake
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/jollybot/jollybot-dizzy.gif" width="200" alt="Jollybot reels with spiral eyes and orbiting stars, plops down to sit dazed, shakes it off and stands back up"><br><b>Dizzy</b><br><sub>Shake the board</sub></td>
-    <td align="center"><img src="docs/images/jollybot/jollybot-sleepy.gif" width="200" alt="Jollybot yawns, his eyelids droop, he closes his eyes and snores with rising Z letters while the screen dims"><br><b>Sleepy</b><br><sub>Right before the screen goes dark (with a soft snore)</sub></td>
-    <td align="center"><img src="docs/images/jollybot/jollybot-waking.gif" width="200" alt="Jollybot pops his eyes open, blinks twice, stretches with arms up and does a happy bounce"><br><b>Waking</b><br><sub>When the screen comes back on</sub></td>
-    <td align="center"><img src="docs/images/jollybot/jollybot-tickle.gif" width="200" alt="Jollybot startles, then squirms and laughs with squeezed eyes, tears of joy and HA marks, and catches his breath"><br><b>Tickled</b><br><sub>Rub his face quickly, or tap fast</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-dizzy.gif" width="180" alt="Jollybot reels with spiral eyes and orbiting stars, plops down to sit dazed, shakes it off and stands back up"><br><b>Dizzy</b><br><sub>Shake the board</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-sleepy.gif" width="180" alt="Jollybot yawns, his eyelids droop, he closes his eyes and snores with rising Z letters while the screen dims"><br><b>Sleepy</b><br><sub>Right before the screen goes dark (with a soft snore)</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-waking.gif" width="180" alt="Jollybot pops his eyes open, blinks twice, stretches with arms up and does a happy bounce"><br><b>Waking</b><br><sub>When the screen comes back on</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-tickle.gif" width="180" alt="Jollybot startles, then squirms and laughs with squeezed eyes, tears of joy and HA marks, and catches his breath"><br><b>Tickled</b><br><sub>Rub his face quickly, or tap fast</sub></td>
   </tr>
 </table>
 
