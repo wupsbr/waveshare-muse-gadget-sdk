@@ -139,7 +139,7 @@ BOOT 5 s resets setup.
   - Dizzy: shaking. `muse_imu.c` (QMI8658, probed at 0x6B/0x6A from each board's `init()`) feeds `muse_input.c` `check_shake`.
   - Sleepy: `check_sleep` drowses for `MUSE_SLEEPY_S` before auto-sleep, and plays two soft snores (`muse_voice_request_snore`).
   - Waking: plays when the screen wakes, or when drowsing is interrupted.
-  - The default Jollybot (`avatar/`) ignores these fields. Only a custom `components/muse/avatar/muse_pixel.c` draws them.
+  - Jollybot (`avatar/muse_pixel.c`) draws them in this fork (`react_setup` and what it drives). Those additions, like Jollybot, are **not** under the Apache License: keep Meta's copyright line and the notice under it, never add an Apache header, and keep them in their own commit so they can be removed on Meta's request.
 - **Battery:** each board's `read_power`.
   - The 1.85C infers USB from voltage trends, because it has no VBUS or charge pin.
   - Errs toward `usb = true`: on battery the firmware dozes Wi-Fi and closes idle sessions.

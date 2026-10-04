@@ -34,7 +34,7 @@ The short version is below; [`docs/CHANGES-FROM-UPSTREAM.md`](docs/CHANGES-FROM-
 | 🔋 **Battery** | Settings › Battery shows just the **percentage** and an estimate of the **time left** at the current drain. The 1.85C and 1.43C read it through the ADC (they have no power chip). | `boards/board_waveshare_s3_185c.c`, `boards/board_waveshare_s3_143c.c` |
 | 🧊 **Display freeze fix** | Cherry-picked from upstream [PR #34](https://github.com/facebookincubator/muse-gadget-sdk/pull/34): LVGL could starve the band sender and freeze the screen after ~20 min. | `boards/muse_lcd_bands.c` |
 | 🐕 **Watchdogs** | Turned back on for these boards: a stuck task panics with a backtrace and reboots instead of leaving the board dead until RST. | `devices/sdkconfig.muse-waveshare-s3-*` |
-| 😵 **Avatar reactions** | Shake Muse and it gets dizzy (boards with a QMI8658 accelerometer, found by probing). Before the screen goes dark Muse drowses for 4 s with a quiet snore, and it wakes up when the screen comes back on. The default Jollybot avatar doesn't draw them: you need an avatar that does (`components/muse/avatar/`, see `tools/muse/AVATAR_RECIPE.md`). The snore and the timing work either way. | `components/muse/muse_imu.c`, `muse_input.c` (`check_sleep`, `check_shake`), `muse_voice.c` (`play_snore`) |
+| 😵 **Avatar reactions** | Shake Muse and it gets dizzy (boards with a QMI8658 accelerometer, found by probing). Before the screen goes dark Muse drowses for 4 s with a quiet snore, and it wakes up when the screen comes back on. Jollybot draws all three (see [New avatar reactions](#new-avatar-reactions)). | `components/muse/muse_imu.c`, `muse_input.c` (`check_sleep`, `check_shake`), `muse_voice.c` (`play_snore`) |
 | 🔐 **Secrets outside git** | The SDK token and API keys live in `secrets/` (gitignored) and are injected into each build's generated `sdkconfig`. | `secrets/`, `tools/muse/secrets.py` |
 
 ```mermaid
@@ -51,6 +51,28 @@ flowchart LR
     App["Muse app (phone)"] -. "BLE: pairing and settings only" .-> Board
     App -- "same conversation" --> VM
 ```
+
+## New avatar reactions
+
+Muse now reacts to the world a little, like a toy that gets dizzy when you shake it:
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/jollybot/jollybot-dizzy.gif" width="200" alt="Jollybot reels with spiral eyes and orbiting stars, plops down to sit dazed, shakes it off and stands back up"><br><b>Dizzy</b><br><sub>Shake the board</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-sleepy.gif" width="200" alt="Jollybot yawns, his eyelids droop, he closes his eyes and snores with rising Z letters while the screen dims"><br><b>Sleepy</b><br><sub>Right before the screen goes dark (with a soft snore)</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-waking.gif" width="200" alt="Jollybot pops his eyes open, blinks twice, stretches with arms up and does a happy bounce"><br><b>Waking</b><br><sub>When the screen comes back on</sub></td>
+  </tr>
+</table>
+
+- **Dizzy** needs the QMI8658 accelerometer. The firmware probes for it at boot: the AMOLED 1.8 has one, and the log says whether the others do. Three quick back-and-forth swings count as a shake; a tap or picking it up doesn't.
+- **Sleepy** plays for the last 4 s before auto-sleep; touching or pressing anything cancels it. Two quiet snores play if Speaker is on.
+- **Waking** plays for 1.5 s every time the screen turns on.
+
+The timing, the sensor and the snore are part of the firmware (Apache 2.0). The drawing is in Jollybot itself — please read the note below.
+
+### About the Jollybot avatar
+
+Jollybot (`esp32/avatar/`) is **Meta's character** and is **not** covered by the Apache License, as Meta's own README states. This fork adds complementary animations to it: dizzy, sleepy and waking, plus the previews above. **These animations and images are not covered by the Apache License either**; they share the character's status. We claim no rights to Jollybot or to these additions and charge nothing for them. They're a fan contribution, and we'll remove them at Meta's request: [wupsbr@gmail.com](mailto:wupsbr@gmail.com). With the reactions idle, Jollybot renders exactly as Meta made him.
 
 ## Quick start
 

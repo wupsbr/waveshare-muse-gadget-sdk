@@ -1,4 +1,12 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// Jollybot is Meta's character and is not covered by the Apache License.
+// The waveshare-muse-gadget-sdk fork adds complementary reactions to it
+// (dizzy, sleepy, waking: react_setup and what it drives). These additions
+// are NOT covered by the Apache License either; they share the character's
+// status. The fork claims no rights to Jollybot or to these additions,
+// charges nothing for them, and will remove them at Meta's request
+// (wupsbr@gmail.com). With the reactions at 0 this renders exactly as Meta's.
 
 #include "muse_pixel.h"
 
@@ -44,6 +52,8 @@ enum {
     C_SHADOW,
     C_HEART,
     C_WHITE,
+    C_STAR,      /* dizzy stars */
+    C_STARD,
     C_COUNT,
 };
 
@@ -89,6 +99,8 @@ static const uint32_t FIXED[C_COUNT] = {
     [C_SHADOW] = 0x16101f,
     [C_HEART] = 0xff4f8b,
     [C_WHITE] = 0xffffff,
+    [C_STAR] = 0xffd84a,
+    [C_STARD] = 0xe89a2c,
 };
 
 static rgb_t s_scheme[5];      /* live, blended: f0..f3, acc */
@@ -185,7 +197,8 @@ uint32_t muse_pixel_accent(muse_mode_t mode)
     return SCHEMES[mode < MUSE_MODE_COUNT ? mode : MUSE_MODE_IDLE].acc;
 }
 
-static void update_palette(const scheme_t *target, float dt)
+/* dim: 0 normally; up to 1 as the avatar nods off (duller rim, darker frame). */
+static void update_palette(const scheme_t *target, float dt, float dim)
 {
     rgb_t tgt[5];
     for (int i = 0; i < 4; i++) {
@@ -213,6 +226,13 @@ static void update_palette(const scheme_t *target, float dt)
     pal[C_AURA1] = scale_rgb(acc, 0.16f);
     pal[C_AURA2] = scale_rgb(acc, 0.34f);
     pal[C_SPK] = mix(acc, pal[C_WHITE], 0.45f);
+    if (dim > 0) {
+        pal[C_RIM] = mix(pal[C_RIM], pal[C_BM], dim);
+        float k = 1.0f - 0.4f * dim * dim;
+        for (int i = 0; i < C_COUNT; i++) {
+            pal[i] = scale_rgb(pal[i], k);
+        }
+    }
 
     for (int i = 0; i < C_COUNT; i++) {
         s_pal[i] = to565(pal[i]);
@@ -431,6 +451,8 @@ typedef struct {
     float a, b;     /* half width, half height */
     float fx, fy;   /* face panel centre */
     float fa, fb;   /* face panel half extents */
+    float shear;    /* x shift per px above `pivot` (sways about the feet); 0 = upright */
+    float pivot;
 } avatar_t;
 
 /* Per-row parts of the body and face fields, in Q12. */
@@ -530,17 +552,31 @@ static void draw_avatar(const avatar_t *j, const limb_t arms[2], const limb_t fe
     }
     /* Only rows/columns that can hold the avatar are shaded. */
     int x0 = (int)(j->cx - j->a * 1.1f - 8), x1 = (int)(j->cx + j->a * 1.1f + 8);
+    if (j->shear != 0) {
+        int m = (int)(fabsf(j->shear) * (j->pivot - (j->cy - j->b - 8))) + 1;
+        x0 -= m;
+        x1 += m;
+    }
     int y0 = (int)(j->cy - j->b - 8), y1 = (int)(j->cy + j->b + 5);
     x0 = x0 < 0 ? 0 : x0;
     y0 = y0 < 0 ? 0 : y0;
     x1 = x1 >= W ? W - 1 : x1;
     y1 = y1 >= H ? H - 1 : y1;
-    int ox = iround(j->cx), oy = iround(j->cy);
-    int32_t cx = QF(j->cx), fcx = QF(j->fx), inv_fa = QF(1.0f / j->fa);
+    int ox0 = iround(j->cx), oy = iround(j->cy);
+    int32_t cx0 = QF(j->cx), fcx0 = QF(j->fx), inv_fa = QF(1.0f / j->fa);
 
     for (int y = y0; y <= y1; y++) {
         row_t row;
         row_setup(j, y + 0.5f, &row);
+        int ox = ox0;
+        int32_t cx = cx0, fcx = fcx0;
+        if (j->shear != 0) {
+            /* Each row slides sideways, fur and all, so the body leans as one piece. */
+            float sh = j->shear * (j->pivot - (y + 0.5f));
+            cx += QF(sh);
+            fcx += QF(sh);
+            ox += iround(sh);
+        }
         int32_t fy = y * ONE + ONE / 2;
         for (int x = x0; x <= x1; x++) {
             int32_t fx = x * ONE + ONE / 2;
@@ -828,6 +864,365 @@ static void draw_alert(int x, int y)
 }
 
 /* ---------------------------------------------------------------------------
+ * Reactions: dizzy (shaken), sleepy (screen about to sleep), waking
+ * ------------------------------------------------------------------------- */
+
+static inline float smooth(float e0, float e1, float x)
+{
+    float k = clampf((x - e0) / (e1 - e0), 0, 1);
+    return k * k * (3 - 2 * k);
+}
+
+/* 0 outside [a, d], 1 on [b, c], eased in between. */
+static inline float window(float x, float a, float b, float c, float d)
+{
+    return smooth(a, b, x) * (1 - smooth(c, d, x));
+}
+
+/* A 5x5 swirl for dizzy eyes, turned in quarter steps (rot) and mirrored for the right eye. */
+static void draw_spiral_eye(int cx, int cy, int rot, bool mirror)
+{
+    static const char *const SWIRL[] = { ".###.", "#...#", "#.#.#", "#.##.", "#...." };
+    for (int r = 0; r < 5; r++) {
+        for (int c = 0; c < 5; c++) {
+            if (SWIRL[r][c] != '#') {
+                continue;
+            }
+            int x = c - 2, y = r - 2;
+            for (int k = 0; k < (rot & 3); k++) {
+                int tx = -y;
+                y = x;
+                x = tx;
+            }
+            px(cx + (mirror ? -x : x), cy + y, C_IRIS);
+        }
+    }
+}
+
+/* Squeezed-shut eyes, > < */
+static void draw_squeeze_eye(int cx, int cy, bool right)
+{
+    static const char *const L[] = { "##..", "..##", "##.." };
+    static const char *const R[] = { "..##", "##..", "..##" };
+    stamp(right ? R : L, 3, cx - 2, cy - 1, C_IRIS, C_IRIS);
+}
+
+/* A dizzy star; `big` in front of the head, small behind it. `a` fades it out (0..1). */
+static void draw_star(int x, int y, bool big, float a)
+{
+    if (big) {
+        static const char *const STAR[] = { "..#..", ".#o#.", "#####", ".###.", ".#.#." };
+        for (int r = 0; r < 5; r++) {
+            for (int c = 0; c < 5; c++) {
+                char ch = STAR[r][c];
+                if (ch != '.' && bayer(x + c, y + r) < a) {
+                    px(x - 2 + c, y - 2 + r, ch == 'o' ? C_WHITE : (r >= 3 ? C_STARD : C_STAR));
+                }
+            }
+        }
+    } else if (bayer(x, y) < a) {
+        px(x, y, C_STAR);
+        px(x - 1, y, C_STARD);
+        px(x + 1, y, C_STARD);
+        px(x, y - 1, C_STARD);
+        px(x, y + 1, C_STARD);
+    }
+}
+
+/* Snore letters, growing as they rise: size 0..2. */
+static void draw_z(int x, int y, int size, float a)
+{
+    static const char *const Z3[] = { "###", ".#.", "###" };
+    static const char *const Z4[] = { "####", "..#.", ".#..", "####" };
+    static const char *const Z5[] = { "#####", "...#.", "..#..", ".#...", "#####" };
+    const char *const *rows = size == 0 ? Z3 : size == 1 ? Z4 : Z5;
+    int n = 3 + size;
+    for (int r = 0; r < n; r++) {
+        for (int c = 0; c < n; c++) {
+            if (rows[r][c] == '#' && bayer(x + c, y + r) < a) {
+                px(x + c, y + r - n / 2, r == 0 || r == n - 1 ? C_WHITE : C_G0);
+            }
+        }
+    }
+}
+
+/* A yawn: an oval that opens to 5 tall, with the tongue showing. */
+static void draw_yawn(int x, int y, float open)
+{
+    int h = 1 + iround(clampf(open, 0, 1) * 4.0f);
+    int w = h >= 4 ? 5 : h >= 2 ? 4 : 3;
+    for (int j = 0; j < h; j++) {
+        int inset = (j == 0 || j == h - 1) && h > 2 ? 1 : 0;
+        for (int i = inset; i < w - inset; i++) {
+            bool tongue = h >= 3 && j >= h - 2 && j < h - 1 + (h >= 5) && i > inset && i < w - inset - 1;
+            px(x - w / 2 + i, y - h / 3 + j, tongue ? C_TONGUE : C_MOUTH);
+        }
+    }
+}
+
+typedef enum { RE_NONE, RE_DIZZY, RE_SLEEPY, RE_WAKING } react_kind_t;
+
+/* How a reaction bends the idle pose. Everything is neutral at the ends of a
+ * reaction that hands back to idle, so it blends in. */
+typedef struct {
+    react_kind_t kind;
+    float p;            /* progress 0..1 */
+    float ts;           /* seconds into the reaction */
+    float sway;         /* head top x offset, px (the body shears about the feet) */
+    float squash;       /* times the usual squash: <1 squat, >1 stretched tall */
+    float bob;          /* extra drop, px */
+    float hop;          /* extra hop, px */
+    float face_dy;      /* face panel nudge, px */
+    float arm_k;        /* blend from idle arms to the pose below */
+    float arm_dx, arm_dy, arm_ang;  /* left arm: from the body edge, from cy, angle (right mirrors) */
+    float feet_out;     /* 0..1, feet splayed for sitting */
+    float glow;         /* aura and sparkle multiplier */
+    float dim;          /* palette dimming */
+    float gaze;         /* gaze multiplier */
+} react_t;
+
+static void react_setup(const muse_pose_t *p, react_t *r)
+{
+    memset(r, 0, sizeof(*r));
+    r->squash = 1;
+    r->glow = 1;
+    r->gaze = 1;
+    /* The reactions are idle behaviour; other modes keep their own look. */
+    if (p->mode != MUSE_MODE_IDLE) {
+        return;
+    }
+    if (p->dizzy > 0) {
+        r->kind = RE_DIZZY;
+        r->p = clampf(p->dizzy, 0, 1);
+        r->ts = r->p * MUSE_DIZZY_S;
+    } else if (p->waking > 0) {
+        r->kind = RE_WAKING;
+        r->p = clampf(p->waking, 0, 1);
+        r->ts = r->p * MUSE_WAKING_S;
+    } else if (p->sleepy > 0) {
+        r->kind = RE_SLEEPY;
+        r->p = clampf(p->sleepy, 0, 1);
+        r->ts = r->p * MUSE_SLEEPY_S;
+    } else {
+        return;
+    }
+    float d = r->p, ts = r->ts;
+
+    switch (r->kind) {
+    case RE_DIZZY: {
+        /* Reeling: a sway that dies down, then a plop onto his bottom. */
+        float reel = 1 - smooth(0.24f, 0.4f, d);
+        r->sway = (4.0f * expf(-ts * 1.1f) + 1.4f) * reel * sinf(ts * 9.0f);
+        float sit = smooth(0.32f, 0.4f, d) * (1 - smooth(0.85f, 0.93f, d));
+        float land = window(d, 0.38f, 0.41f, 0.43f, 0.5f);
+        /* Sitting dazed: slow woozy circles. */
+        float daze = window(d, 0.34f, 0.46f, 0.74f, 0.82f);
+        r->sway += daze * 1.6f * sinf(ts * 3.0f);
+        r->face_dy = daze * 0.6f * sinf(ts * 6.0f + 1.0f);
+        /* Shakes it off, then stands with a stretch. */
+        float shake = window(d, 0.79f, 0.81f, 0.86f, 0.88f);
+        r->sway += shake * 1.6f * sinf(ts * 32.0f);
+        float stretch = window(d, 0.86f, 0.91f, 0.93f, 0.99f);
+        r->squash = 1 - 0.17f * sit - 0.07f * land + 0.07f * stretch;
+        r->feet_out = sit;
+        /* Arms flail while reeling, rest on the floor when sitting. */
+        float flail = reel * (1 - sit);
+        r->arm_k = clampf(flail + sit, 0, 1);
+        r->arm_dx = -0.5f * flail + 0.5f * sit;
+        r->arm_dy = -1.0f * flail + 2.0f * sit;
+        r->arm_ang = -0.3f + flail * (-0.6f + 0.45f * sinf(ts * 9.0f)) - 0.45f * sit;
+        r->gaze = smooth(0.88f, 1.0f, d);
+        r->glow = 1 - 0.3f * window(d, 0.3f, 0.45f, 0.75f, 0.9f);
+        break;
+    }
+    case RE_SLEEPY: {
+        float yawn = window(d, 0.02f, 0.12f, 0.2f, 0.3f);
+        float droop = smooth(0.25f, 0.7f, d);
+        float sleep = smooth(0.66f, 0.74f, d);
+        /* Heavy nods while fighting it. */
+        float nodw = window(d, 0.3f, 0.38f, 0.64f, 0.7f);
+        float nod = sinf(ts * 3.4f);
+        nod = nod > 0 ? nod * nod * nodw : 0;
+        float breath = sinf(ts * 2.6f);
+        r->squash = 1 + 0.05f * yawn - 0.04f * droop + 0.03f * sleep * breath;
+        r->face_dy = -0.7f * yawn + 0.6f * droop + 1.4f * nod + 0.4f * sleep;
+        r->bob = 0.5f * droop + 0.5f * sleep * (1 - breath);
+        r->sway = 0.8f * droop * sinf(ts * 1.3f);
+        r->arm_k = clampf(yawn + droop, 0, 1);
+        r->arm_dx = 0.2f * droop;
+        r->arm_dy = -2.0f * yawn + 1.5f * droop;
+        r->arm_ang = -0.3f - 0.8f * yawn + 0.18f * droop;
+        r->gaze = 1 - smooth(0.0f, 0.3f, d);
+        r->glow = 1 - 0.7f * smooth(0.3f, 1.0f, d);
+        r->dim = smooth(0.35f, 1.0f, d);
+        break;
+    }
+    case RE_WAKING: {
+        float pop = smooth(0.04f, 0.1f, d);
+        float spring = window(d, 0.06f, 0.1f, 0.12f, 0.22f);
+        float stretch = window(d, 0.38f, 0.5f, 0.58f, 0.68f);
+        float up = window(d, 0.36f, 0.48f, 0.78f, 0.96f);   /* arms stay up through the bounce */
+        float b = clampf((d - 0.64f) / 0.16f, 0, 1);
+        r->hop = 3.0f * sinf(b * 3.1416f) + 1.0f * spring;
+        r->squash = 1 - 0.1f * (1 - pop) + 0.05f * spring + 0.12f * stretch
+                  - 0.06f * window(d, 0.6f, 0.64f, 0.66f, 0.7f) - 0.05f * window(d, 0.78f, 0.81f, 0.83f, 0.9f);
+        r->arm_k = up;
+        r->arm_dx = -0.5f;
+        r->arm_dy = -12.0f + 3.0f * (1 - stretch);
+        r->arm_ang = 2.9f - 0.4f * (1 - stretch) + (1 - stretch) * up * 0.25f * sinf(ts * 18.0f);
+        r->gaze = smooth(0.8f, 1.0f, d);
+        r->glow = 0.2f + 0.8f * smooth(0.0f, 0.45f, d);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* Eyes and mouth for a reaction; returns false to keep the mode's own. */
+static bool react_face(const react_t *r, const avatar_t *j, float eye_y, float eye_dx, float blink, float gx, float gy)
+{
+    float d = r->p, ts = r->ts;
+    float off = j->shear * (j->pivot - eye_y);
+    int lx = iround(j->fx + off - eye_dx), rx = iround(j->fx + off + eye_dx), ey = iround(eye_y);
+    float mx = j->fx + j->shear * (j->pivot - (eye_y + 3));
+    int my = iround(eye_y + 3);
+    float open = 1 - blink;
+
+    switch (r->kind) {
+    case RE_DIZZY:
+        if (d < 0.79f) {
+            float rt = fminf(ts, 3.2f);
+            int rot = (int)floorf(rt * (10.0f - 1.5f * rt) / (TAU / 4));
+            draw_spiral_eye(lx, ey, rot, false);
+            draw_spiral_eye(rx, ey, rot, true);
+        } else if (d < 0.87f) {
+            draw_squeeze_eye(lx, ey, false);
+            draw_squeeze_eye(rx, ey, true);
+        } else {
+            draw_eye(j->fx + off - eye_dx, eye_y, open, EYES_NORMAL, gx, gy);
+            draw_eye(j->fx + off + eye_dx, eye_y, open, EYES_NORMAL, gx, gy);
+        }
+        if (d < 0.87f) {
+            static const char *const WAVY[] = { ".#..#", "#.##." };
+            stamp(WAVY, 2, iround(mx) - 2, my, C_MOUTH, C_MOUTH);
+        } else {
+            draw_mouth(iround(mx), my, MOUTH_SMILE, 0);
+        }
+        return true;
+    case RE_SLEEPY: {
+        float yawn = window(d, 0.02f, 0.12f, 0.2f, 0.3f);
+        float sleep = smooth(0.66f, 0.74f, d);
+        if (yawn > 0.45f) {
+            draw_squeeze_eye(lx, ey, false);
+            draw_squeeze_eye(rx, ey, true);
+        } else if (sleep > 0.5f) {
+            static const char *const SHUT[] = { "#..#", ".##." };
+            stamp(SHUT, 2, lx - 2, ey + 1, C_IRIS, C_IRIS);
+            stamp(SHUT, 2, rx - 2, ey + 1, C_IRIS, C_IRIS);
+        } else {
+            /* Heavy lids: the beads lose their tops as he droops, dipping on each nod. */
+            float droop = smooth(0.25f, 0.7f, d);
+            float nod = sinf(ts * 3.4f);
+            nod = nod > 0 ? nod * window(d, 0.3f, 0.38f, 0.64f, 0.7f) : 0;
+            float o = fminf(1 - 0.62f * droop - 0.3f * nod - 0.1f * sleep, open);
+            draw_eye(j->fx + off - eye_dx, eye_y, o, EYES_NORMAL, gx, gy);
+            draw_eye(j->fx + off + eye_dx, eye_y, o, EYES_NORMAL, gx, gy);
+        }
+        if (yawn > 0.05f) {
+            draw_yawn(iround(mx), my + 1, yawn);
+        } else if (sleep > 0.5f) {
+            /* Snoring: a little o that opens on each breath. */
+            if (sinf(ts * 2.6f) > 0.2f) {
+                draw_mouth(iround(mx), my + 1, MOUTH_O, 0);
+            } else {
+                static const char *const O[] = { "##", "##" };
+                stamp(O, 2, iround(mx) - 1, my, C_MOUTH, C_MOUTH);
+            }
+        } else {
+            draw_mouth(iround(mx), my, MOUTH_SMILE, 0);
+        }
+        return true;
+    }
+    case RE_WAKING: {
+        bool shut = d < 0.06f || (d > 0.17f && d < 0.22f) || (d > 0.28f && d < 0.33f);
+        float stretch = window(d, 0.38f, 0.5f, 0.58f, 0.68f);
+        bool bounce = d >= 0.62f && d < 0.84f;
+        if (shut) {
+            static const char *const SHUT[] = { "#..#", ".##." };
+            stamp(SHUT, 2, lx - 2, ey + 1, C_IRIS, C_IRIS);
+            stamp(SHUT, 2, rx - 2, ey + 1, C_IRIS, C_IRIS);
+        } else if (stretch > 0.5f) {
+            draw_squeeze_eye(lx, ey, false);
+            draw_squeeze_eye(rx, ey, true);
+        } else if (bounce) {
+            draw_eye(j->fx + off - eye_dx, eye_y, 1, EYES_HAPPY, 0, 0);
+            draw_eye(j->fx + off + eye_dx, eye_y, 1, EYES_HAPPY, 0, 0);
+        } else {
+            eye_style_t st = d < 0.38f ? EYES_WIDE : EYES_NORMAL;
+            draw_eye(j->fx + off - eye_dx, eye_y, d < 0.38f ? 1 : open, st, gx, gy);
+            draw_eye(j->fx + off + eye_dx, eye_y, d < 0.38f ? 1 : open, st, gx, gy);
+        }
+        if (stretch > 0.2f) {
+            draw_yawn(iround(mx), my + 1, stretch * 0.75f);
+        } else if (bounce) {
+            draw_mouth(iround(mx), my, MOUTH_GRIN, 0);
+        } else if (d > 0.06f && d < 0.36f) {
+            draw_mouth(iround(mx), my, MOUTH_O, 0);
+        } else {
+            draw_mouth(iround(mx), my, MOUTH_SMILE, 0);
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+/* Stars circling over the head while dizzy; front ones go over the hood. */
+static void draw_dizzy_stars(const react_t *r, float hx, float top, bool front)
+{
+    float d = r->p;
+    float a = smooth(0.0f, 0.04f, d) * (1 - smooth(0.6f, 0.8f, d));
+    if (a <= 0) {
+        return;
+    }
+    /* They slow down as he comes round. */
+    float ts = r->ts;
+    float ang0 = ts * 4.6f - ts * ts * 0.35f;
+    for (int i = 0; i < 3; i++) {
+        float ang = ang0 + i * TAU / 3;
+        float s = sinf(ang);
+        if ((s > 0) != front) {
+            continue;
+        }
+        int x = iround(hx + cosf(ang) * 13.0f);
+        int y = iround(top - 3 + s * 3.0f);
+        draw_star(x, y, front, a);
+    }
+}
+
+/* z Z Z drifting up and away from beside the head. */
+static void draw_snore(const react_t *r, float hx, float top)
+{
+    float zt = r->ts - 0.68f * MUSE_SLEEPY_S;
+    if (zt <= 0) {
+        return;
+    }
+    for (int k = 0; k < 3; k++) {
+        float ph = zt * 0.75f - k * 0.34f;
+        if (ph < 0) {
+            continue;
+        }
+        ph = fracf(ph);
+        float a = smooth(0.0f, 0.08f, ph) * (1 - smooth(0.75f, 1.0f, ph));
+        int x = iround(hx + 10 + ph * 10 + sinf(ph * 7.0f) * 1.2f);
+        int y = iround(top + 9 - ph * 15);
+        draw_z(x, y, ph < 0.22f ? 0 : ph < 0.5f ? 1 : 2, a);
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Frame
  * ------------------------------------------------------------------------- */
 
@@ -895,8 +1290,14 @@ void muse_pixel_render(const muse_pose_t *p)
     float happy = p->happy;
     float level = p->level;
     float t = p->t;
+    react_t re;
+    react_setup(p, &re);
+    bool react = re.kind != RE_NONE;
+    if (react) {
+        happy = 0;      /* a reaction takes over the face and arms */
+    }
 
-    update_palette(&SCHEMES[mode], dt);
+    update_palette(&SCHEMES[mode], dt, re.dim);
     float blink = eyes_update(p, dt);
 
     memset(s_fb, C_BG, sizeof(s_fb));
@@ -930,6 +1331,11 @@ void muse_pixel_render(const muse_pose_t *p)
     float boot = mode == MUSE_MODE_BOOT ? clampf(p->mode_t / 1.4f, 0, 1) : 1.0f;
     float pop = mode == MUSE_MODE_BOOT ? clampf(p->mode_t / 0.6f, 0, 1) : 1.0f;
     float squash = 1.0f - (1.0f - pop) * 0.35f + sinf(pop * 3.1416f) * 0.06f;
+    if (react) {
+        squash *= re.squash;
+        bob += re.bob;
+        hop += re.hop;
+    }
 
     float breathe = sinf(t * breathe_rate + 1.0f) * 0.03f;
     avatar_t j;
@@ -941,22 +1347,38 @@ void muse_pixel_render(const muse_pose_t *p)
     j.fb = 7.4f * squash;
     j.fx = j.cx + lean * 0.3f;
     j.fy = j.cy - j.b * 0.30f + bob * 0.3f;
+    j.shear = 0;
+    j.pivot = 0;
+    if (react) {
+        j.fy += re.face_dy;
+        j.pivot = j.cy + j.b;
+        j.shear = re.sway / (2 * j.b);
+    }
 
     /* ---- background layers ---- */
     float aura_r = 29.0f + level * 4.0f + sinf(t * 1.5f) * 1.0f;
     float aura_s = (0.75f * boot + level * 0.4f) * fade;
+    if (react) {
+        aura_s *= re.glow;
+    }
     draw_aura(j.cx, j.cy - 3, aura_r, aura_s);
     if (mode == MUSE_MODE_LISTENING) {
         draw_rings(j.cx, j.fy + 2, t, level, 0.9f);
     } else if (mode == MUSE_MODE_SPEAKING) {
         draw_rings(j.cx, j.fy + 2, t, level, 0.6f);
     }
-    draw_shadow(j.cx, 58.5f, 13.0f - hop * 0.8f);
+    draw_shadow(j.cx, 58.5f, 13.0f - hop * 0.8f + (react ? 2.0f * re.feet_out : 0.0f));
 
     float spk_speed = mode == MUSE_MODE_THINKING ? 2.8f : mode == MUSE_MODE_LISTENING ? 1.2f
                     : mode == MUSE_MODE_SPEAKING ? 1.5f : 0.6f;
     int spk_count = mode == MUSE_MODE_BOOT ? (int)(boot * 6) : (int)(6 * fade);
+    if (react) {
+        spk_count = (int)(spk_count * re.glow + 0.5f);
+    }
     draw_sparkles(p, j.cx, j.cy, false, spk_speed, spk_count);
+    if (re.kind == RE_DIZZY) {
+        draw_dizzy_stars(&re, j.cx + re.sway, j.cy - j.b, false);
+    }
 
     /* ---- limbs ---- */
     float base = j.cy + j.b;
@@ -964,6 +1386,16 @@ void muse_pixel_render(const muse_pose_t *p)
     float step = mode == MUSE_MODE_SPEAKING ? sinf(t * 5.0f) * 0.6f : 0.0f;
     feet[0] = (limb_t){ j.cx - 7.0f, base - 0.5f + (happy > 0 ? hop * 0.3f : step), -0.15f };
     feet[1] = (limb_t){ j.cx + 7.0f, base - 0.5f + (happy > 0 ? hop * 0.3f : -step), 0.15f };
+    if (react) {
+        /* Sitting: feet splay out in front. The hop lifts them with the body. */
+        float fo = re.feet_out;
+        for (int i = 0; i < 2; i++) {
+            float sgn = i ? 1.0f : -1.0f;
+            feet[i].x += sgn * 3.5f * fo;
+            feet[i].y += 0.6f * fo - re.hop;
+            feet[i].angle += sgn * 0.6f * fo;
+        }
+    }
 
     limb_t arms[2];
     float adx = j.a + 0.3f;
@@ -1004,6 +1436,17 @@ void muse_pixel_render(const muse_pose_t *p)
         }
         break;
     }
+    }
+    if (react) {
+        for (int i = 0; i < 2; i++) {
+            float sgn = i ? 1.0f : -1.0f;
+            limb_t to = { j.cx + sgn * (adx - re.arm_dx), j.cy + re.arm_dy, -sgn * re.arm_ang };
+            float k = re.arm_k;
+            arms[i].x += (to.x - arms[i].x) * k;
+            arms[i].y += (to.y - arms[i].y) * k;
+            arms[i].angle += (to.angle - arms[i].angle) * k;
+            arms[i].x += j.shear * (j.pivot - arms[i].y);   /* ride along with the lean */
+        }
     }
     draw_avatar(&j, arms, feet);
 
@@ -1047,8 +1490,17 @@ void muse_pixel_render(const muse_pose_t *p)
         mouth = MOUTH_GRIN;
     }
 
-    draw_eye(j.fx - eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
-    draw_eye(j.fx + eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
+    bool react_drawn = false;
+    if (react) {
+        float off = j.shear * (j.pivot - (eye_y + 2));
+        draw_blush(iround(j.fx + off - j.fa * 0.72f), iround(eye_y + 2), 0.55f);
+        draw_blush(iround(j.fx + off + j.fa * 0.72f), iround(eye_y + 2), 0.55f);
+        react_drawn = react_face(&re, &j, eye_y, eye_dx, blink, s_eyes.gx * re.gaze, s_eyes.gy * re.gaze);
+    }
+    if (!react_drawn) {
+        draw_eye(j.fx - eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
+        draw_eye(j.fx + eye_dx, eye_y, open, style, s_eyes.gx, s_eyes.gy);
+    }
 
     /* Tiny brows for the expressive states. */
     int bl = iround(j.fx - eye_dx), br = iround(j.fx + eye_dx), by = iround(eye_y) - 4;
@@ -1061,10 +1513,11 @@ void muse_pixel_render(const muse_pose_t *p)
     }
 
     float blush = 0.55f + happy * 0.45f + (mode == MUSE_MODE_SPEAKING ? 0.15f : 0.0f);
-    draw_blush(iround(j.fx - j.fa * 0.72f), iround(eye_y + 2), blush);
-    draw_blush(iround(j.fx + j.fa * 0.72f), iround(eye_y + 2), blush);
-
-    draw_mouth(iround(j.fx), iround(eye_y + 3), mouth, mouth_open);
+    if (!react_drawn) {
+        draw_blush(iround(j.fx - j.fa * 0.72f), iround(eye_y + 2), blush);
+        draw_blush(iround(j.fx + j.fa * 0.72f), iround(eye_y + 2), blush);
+        draw_mouth(iround(j.fx), iround(eye_y + 3), mouth, mouth_open);
+    }
 
     /* ---- foreground ---- */
     draw_sparkles(p, j.cx, j.cy, true, spk_speed, spk_count);
@@ -1081,6 +1534,11 @@ void muse_pixel_render(const muse_pose_t *p)
     }
     if (mode == MUSE_MODE_ERROR) {
         draw_alert(iround(j.cx + 18), iround(top - 1));
+    }
+    if (re.kind == RE_DIZZY) {
+        draw_dizzy_stars(&re, j.cx + re.sway, top, true);
+    } else if (re.kind == RE_SLEEPY) {
+        draw_snore(&re, j.cx + re.sway, top);
     }
 
 }

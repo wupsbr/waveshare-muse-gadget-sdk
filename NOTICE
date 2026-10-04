@@ -22,4 +22,11 @@ Third-party material:
 - muse_lcd_bands.c's flush-wait fix is cherry-picked from upstream pull request
   #34 by Todd Sherman.
 
+Jollybot: esp32/avatar/ is Meta's character and is not covered by the Apache
+License. This fork's complementary animations to it (dizzy, sleepy, waking)
+and their previews in docs/images/jollybot/ are NOT covered by the Apache
+License either; they share the character's status. We claim no rights to
+them, charge nothing for them, and will remove them at Meta's request
+(wupsbr@gmail.com).
+
 ElevenLabs is a third-party service with its own terms; you supply your own key.

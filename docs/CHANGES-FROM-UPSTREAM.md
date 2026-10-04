@@ -182,11 +182,17 @@ The avatar's pose (`muse_pixel.h`, `muse_pose_t`) has three more fields, each
 0 when nothing is happening, else 0..1 through the reaction. The firmware
 drives them; drawing them is the avatar's job.
 
-> **The default avatar ignores them.** Meta's Jollybot in `avatar/` doesn't
-> read the new fields, so with it nothing changes on screen. The reactions
-> show only with an avatar that draws them: your own
-> `components/muse/avatar/muse_pixel.c` (gitignored; see
-> `tools/muse/AVATAR_RECIPE.md`). The snore and the timing work regardless.
+> **Jollybot draws them in this fork.** `esp32/avatar/muse_pixel.c` gains
+> spiral eyes and orbiting stars, sitting dazed, a yawn and drooping lids,
+> snore Zs, and a blink-and-stretch wake-up (`react_setup` and what it
+> drives). With all three fields at 0 the output is byte-identical to Meta's
+> renderer (checked over 1,400 frames in every mode).
+>
+> **These additions are not under the Apache License.** Jollybot is Meta's
+> character, outside the SDK's license, and the animations and preview GIFs
+> (`docs/images/jollybot/`) share its status. We claim no rights to them,
+> charge nothing for them, and will remove them at Meta's request. They're
+> in a commit of their own, so `git revert` removes them cleanly.
 
 - **Dizzy (`pose.dizzy`, 4 s): shake Muse.**
   - `muse_imu.c` is a small QMI8658 driver: it probes I2C 0x6B then 0x6A,
