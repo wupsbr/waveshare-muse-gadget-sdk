@@ -24,3 +24,11 @@ muse-simulator.ppm
 # Local gadget provisioning and original-device flash backups.
 .sdk-token
 /backups/
+
+# Secrets: SDK token and API keys live here, one per file (secrets/README.md)
+secrets/*
+!secrets/README.md
+!secrets/*.example
+
+# Build output carries the secrets inside its sdkconfig
+build-*/
