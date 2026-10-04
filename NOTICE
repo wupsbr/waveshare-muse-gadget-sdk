@@ -1,0 +1,25 @@
+Waveshare × Muse Gadgets
+Copyright the contributors to this fork.
+
+This is a fork of Muse Gadgets (https://github.com/facebookincubator/muse-gadget-sdk),
+Copyright (c) Meta Platforms, Inc. and affiliates, licensed under the Apache
+License, Version 2.0. Files keep their original headers.
+
+Changes in this fork: board support for the Waveshare ESP32-S3-Touch-LCD-1.85C,
+ESP32-S3-Touch-AMOLED-1.43C and ESP32-S3-Touch-AMOLED-1.8; spoken replies via
+ElevenLabs; pushes; touch volume; ADC battery reading; secrets tooling.
+
+Third-party material:
+- The ST77916 vendor init sequence and board pin maps for the 1.85C come from
+  Waveshare's examples (https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.85C,
+  Apache License 2.0).
+- Pin maps, the SH8601 init sequence and touch registers for the 1.43C and the
+  1.8 were taken as hardware facts from Waveshare's published examples and
+  schematics; no Waveshare source files are included.
+- Panel, touch and codec drivers (esp_lcd_st77916, esp_lcd_sh8601,
+  esp_lcd_co5300, esp_codec_dev) are fetched at build time from the Espressif
+  component registry under their own licenses (Apache License 2.0).
+- muse_lcd_bands.c's flush-wait fix is cherry-picked from upstream pull request
+  #34 by Todd Sherman.
+
+ElevenLabs is a third-party service with its own terms; you supply your own key.

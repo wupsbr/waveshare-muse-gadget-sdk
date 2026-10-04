@@ -1,72 +1,129 @@
-<!--
-Copyright (c) Meta Platforms, Inc. and affiliates.
+# Waveshare × Muse Gadgets
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+**Meta's [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk), running on three round and square Waveshare ESP32-S3 boards — and talking back out loud.**
 
-    http://www.apache.org/licenses/LICENSE-2.0
+This is a fork of `facebookincubator/muse-gadget-sdk` that adds three Waveshare boards to the ESP32 Device SDK, plus a few features the upstream firmware doesn't have yet: spoken replies, replies you didn't ask for (pushes), touch volume and battery level on boards without a power chip.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
--->
+| | Waveshare ESP32-S3-Touch-LCD-1.85C | Waveshare ESP32-S3-Touch-AMOLED-1.43C | Waveshare ESP32-S3-Touch-AMOLED-1.8 |
+|---|---|---|---|
+| Screen | 1.85" round LCD, 360×360, ST77916 (QSPI) | 1.43" round AMOLED, 466×466, SH8601 (QSPI) | 1.8" AMOLED, 368×448, SH8601 or CO5300 (QSPI) |
+| Touch | CST816 | FocalTech-style @ 0x15 | FT3168 or CST816 |
+| Audio | ES8311 + amp, ES7210 dual mic | ES8311 + NS4150B, ES7210 dual mic | ES8311 (speaker and mic) |
+| Power | No PMU · battery by ADC | No PMU · battery by ADC + charge pin | AXP2101 |
+| Flash / PSRAM | 16 MB / 8 MB octal | 8 MB / 8 MB octal (PICO-1-N8R8) | 16 MB / 8 MB octal |
+| Talk button | BOOT | BOOT | BOOT (PWR is aux) |
+| Alias | `s185c` | `s143c` | `s18` |
 
-# Muse Gadgets
+All three run the **full Muse UI**: animated avatar, push-to-talk, touch settings, images from Muse, the home-network tunnel and OTA. They are community ports and **experimental**.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/images/muse-gadgets-dark.png">
-    <img src=".github/images/muse-gadgets-light.png" width="900" alt="Muse gadgets: a Waveshare round AMOLED, an M5Stack StickS3, Muse Home Link, a Raspberry Pi and a Seeed reTerminal e-ink display">
-  </picture>
-</p>
+## What's new compared to upstream
 
-Muse gadgets are open source devices you build yourself. Program an
-off-the-shelf ESP32 board or set up a Raspberry Pi with our device SDKs, then
-connect Muse to your displays, buttons, sensors, actuators, and whatever else
-you've got lying on your workbench.
-
-We open sourced the SDKs and firmware here. It's built by hackers, for hackers,
-just for fun. Side effects of tinkering may include bricked boards, voided
-warranties, brownouts, or bankruptcies. Proceed at your own risk!
-
-| | |
-|---|---|
-| [**ESP32 Device SDK**](esp32) | Connect your ESP32 board to Muse through our open source SDK. Throw in a screen to show images, add audio in and out, or wire up other sensors. |
-| [**Linux Device SDK**](linux) | Turn that spare Raspberry Pi or Linux box into a Muse gadget. Hack in your own commands to let Muse handle sysadmin chores or your Home Assistant setup. |
-
-Before you flash or pair a gadget, get an
-[SDK token](https://gadgets.muse.ai/settings/sdk-tokens) and review the
-[Gadget SDK Terms](https://gadgets.muse.ai/sdk-terms). Every gadget needs a
-token to pair.
-
-ESP32 and Linux gadgets pair with the Muse app on iOS and Android, via
-Settings > Devices. Turn on Developer mode there first, then look for devices
-prefixed with "MuseGadget".
-Each directory has a `README.md` to get started and an `AGENTS.md` for coding
-agents like [Muse Code](https://developer.meta.com/ai/lp/muse-code/).
-
-## Community
-
-Meet other hackers who are building and customizing Muse gadgets in our
-community [Discord](https://discord.gg/3bhjCkZdd6). Get inspired, support each
-other, and share what you make.
-
-## License
-
-Muse Gadgets is licensed under the Apache License, Version 2.0, found in
-[`LICENSE`](LICENSE), except for these third-party files, which keep their
-upstream licenses:
-
-| Path | Upstream | License |
+| Feature | What it does | Where |
 |---|---|---|
-| [`esp32/components/minimp3/include/minimp3.h`](esp32/components/minimp3) | [lieff/minimp3](https://github.com/lieff/minimp3) | CC0-1.0, see [`LICENSE`](esp32/components/minimp3/LICENSE) |
-| [`esp32/main/pixel_font.c`](esp32/main/pixel_font.c) | Adafruit GFX `glcdfont.c` | BSD-2-Clause, in the file header |
+| 🗣️ **Spoken replies** | Every reply is read aloud through the speaker with [ElevenLabs](https://elevenlabs.io) streaming TTS, captions following the speech. Audio starts ~1 s after the text arrives. Without a key, replies stay text. | `components/muse/muse_chat_session.cpp` (`start_tts`, `tts_fetch`), `Kconfig` |
+| 📬 **Pushes** | Muse messages that arrive with no question pending — Muse writing first, or replying to something you typed in the app in the same conversation — wake the screen and are shown and spoken. On USB power the session stays connected so they keep arriving. | `muse_chat_session.cpp` (`push_begin`), `muse_voice.c` (`play_push`) |
+| 🔊 **Touch volume** | Drag up or down on the avatar screen to change the volume; a cyan ring on the edge shows the level and fades after 2 s. Horizontal swipes still open settings. | `components/muse/muse_ui.c` (`volume_drag`) |
+| 🔋 **Battery** | Settings › Battery shows the level, voltage and charging state on the 1.85C and 1.43C, read through the ADC (they have no power chip). | `boards/board_waveshare_s3_185c.c`, `boards/board_waveshare_s3_143c.c` |
+| 🧊 **Display freeze fix** | Cherry-picked from upstream [PR #34](https://github.com/facebookincubator/muse-gadget-sdk/pull/34): LVGL could starve the band sender and freeze the screen after ~20 min. | `boards/muse_lcd_bands.c` |
+| 🐕 **Watchdogs** | Turned back on for these boards: a stuck task panics with a backtrace and reboots instead of leaving the board dead until RST. | `devices/sdkconfig.muse-waveshare-s3-*` |
+| 🔐 **Secrets outside git** | The SDK token and API keys live in `secrets/` (gitignored) and are injected into each build's generated `sdkconfig`. | `secrets/`, `tools/muse/secrets.py` |
 
-Dependencies fetched at build time are under their own licenses: ESP-IDF
-components (into `esp32/managed_components/`), and the simulator's LVGL and
-SDL (listed in [`esp32/simulator/THIRD_PARTY.md`](esp32/simulator/THIRD_PARTY.md)).
+```mermaid
+flowchart LR
+    subgraph Board["Waveshare ESP32-S3"]
+        UI["Avatar UI · touch volume"]
+        Voice["Push-to-talk (BOOT)"]
+        Spk["Speaker"]
+    end
+    Voice -- "voice note" --> VM["Muse<br/>(encrypted session over Wi-Fi)"]
+    VM -- "reply text · pushes" --> UI
+    UI -- "reply text" --> EL["ElevenLabs<br/>streaming TTS"]
+    EL -- "MP3 stream" --> Spk
+    App["Muse app (phone)"] -. "BLE: pairing and settings only" .-> Board
+    App -- "same conversation" --> VM
+```
 
-The Apache License does not cover the [Jollybot avatar](esp32/avatar).
+## Quick start
+
+You need a Mac or Linux machine, a **USB-C cable that carries data** (charge-only cables are a common trap), one of the boards, a [Muse SDK token](https://gadgets.muse.ai/settings/sdk-tokens) and the Muse app.
+
+**1. Install ESP-IDF v6.0.1** (the only version the SDK supports):
+
+```sh
+brew install cmake ninja dfu-util python3          # macOS
+git clone -b v6.0.1 --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf-v6
+~/esp/esp-idf-v6/install.sh esp32s3
+```
+
+**2. Add your secrets** (see [`secrets/README.md`](secrets/README.md)):
+
+```sh
+git clone https://github.com/wupsbr/waveshare-muse-gadget-sdk && cd waveshare-muse-gadget-sdk
+cp secrets/muse_sdk_token.example secrets/muse_sdk_token            # paste your mgst_… token
+cp secrets/elevenlabs_api_key.example secrets/elevenlabs_api_key    # optional: spoken replies
+chmod 600 secrets/*
+```
+
+**3. Build and flash** (`s185c`, `s143c` or `s18`):
+
+```sh
+cd esp32
+tools/muse/board.sh build s185c
+tools/muse/board.sh flash s185c
+```
+
+`board.sh` finds ESP-IDF on its own, copies the secrets into `build-muse-<board>/sdkconfig` and prints only which ones it set. For a clean first install, erase the board first: `python -m esptool -p /dev/cu.usbmodem… erase-flash`.
+
+**4. Pair.** In the Muse app turn on **Settings › Devices › Developer mode**, tap **+**, pick `MuseGadget-XXXXXX` (the name is on the board's screen) and press **BOOT** when the screen asks. Then send it your Wi-Fi from the app.
+
+**5. Talk.** Hold **BOOT**, speak, let go.
+
+## Hardware notes
+
+Things that cost us time, so they don't cost you:
+
+- **Back up the factory firmware first:** `python -m esptool -p PORT read-flash 0 0x1000000 factory.bin` (`0x800000` on the 8 MB 1.43C). It's the only way back to the vendor demo.
+- **Identify the exact model** before flashing: the 1.85**C**, 1.43**C** and 1.8 differ from their non-C siblings. `esptool chip-id` plus `strings factory.bin | grep -i board` usually names it.
+- **1.85C side header:** `E5`–`E8` are the TCA9554 expander's pins, not ESP32 GPIOs, and `19`/`20` are the USB data lines — using them as GPIO kills flashing and the console. The header's SDA/SCL are the same internal I2C bus (GPIO 11/10) as touch, RTC, codecs and expander.
+- **1.85C buttons:** only BOOT is readable. RST resets the chip and the slide switch disconnects the battery.
+- **1.85C panel revisions:** register `0x04` reads `00 02 7f 7f` on the revision that needs Waveshare's long vendor init sequence; the board file checks it.
+- **1.43C** is mounted upside down: `MADCTL 0xC0`, and touch is flipped on both axes. PWR drives a hardware power latch, not a GPIO.
+- **1.8** comes in two revisions (SH8601 + FT3168, or CO5300 + CST816). The board file probes the touch controller to tell them apart.
+- **ElevenLabs over HTTPS** needs `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`: `api.elevenlabs.io` sends GTS Root R1 cross-signed by a GlobalSign root that's no longer in ESP-IDF's bundle.
+- **USB hubs and docks** can drop the board for minutes, which looks exactly like a firmware hang. Flash and monitor straight from the computer's port.
+
+## Repository layout
+
+```
+esp32/                                   Meta's ESP32 Device SDK, plus:
+  components/muse/boards/
+    board_waveshare_s3_185c.c            1.85C: ST77916, CST816, TCA9554, ES8311/ES7210, ADC battery
+    board_waveshare_s3_143c.c            1.43C: SH8601, touch @0x15, ES8311/ES7210, ADC battery
+    board_waveshare_s3_18.c              1.8: SH8601/CO5300, FT3168/CST816, AXP2101
+  devices/sdkconfig.muse-waveshare-s3-*  board overlays
+  tools/muse/secrets.py                  secrets → build sdkconfig
+secrets/                                 your token and keys (gitignored)
+linux/  skills/                          upstream, unchanged
+README.meta.md                           upstream README
+```
+
+Each board is also documented the upstream way in [`esp32/devices/README.md`](esp32/devices/README.md) and [`esp32/AGENTS.md`](esp32/AGENTS.md).
+
+## Staying in sync with upstream
+
+```sh
+git remote add upstream https://github.com/facebookincubator/muse-gadget-sdk.git
+git fetch upstream && git merge upstream/main
+```
+
+## Security
+
+- Your **SDK token and ElevenLabs key are compiled into the firmware.** Don't share a `build-*/` directory or a flashed image. If a key leaks, revoke it (gadgets.muse.ai, elevenlabs.io) and rebuild.
+- Pairing is community pairing (button press, no manufacturer attestation): pair on a network you trust.
+- Consider `CONFIG_HOMEHUB_NVS_ENCRYPTION` so Wi-Fi credentials and device tokens aren't readable from flash.
+
+## License and credits
+
+Apache License 2.0, like upstream — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Built on [facebookincubator/muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk) by Meta. Board details come from Waveshare's examples and schematics; panel and codec drivers from Espressif's component registry. The display-freeze fix is from upstream PR #34 by @toddsherman. Not affiliated with Meta, Waveshare or ElevenLabs.
+
+> Built by hackers, for hackers, just for fun. Flashing custom firmware can brick boards and void warranties. Proceed at your own risk!
