@@ -1442,6 +1442,10 @@ static bool turn_start(uint32_t gen, bool text);
 
 static void push_begin(const char *id)
 {
+    if (!muse_settings_pushes_on()) {
+        ESP_LOGI(TAG, "push: message %s left for the app (All messages is off)", id);
+        return;
+    }
     /* Only between turns, with the voice task free to play it. */
     if (muse_state_mode(nullptr) != MUSE_MODE_IDLE || s_push_pending.load()) {
         ESP_LOGI(TAG, "push: busy, message %s left for the app", id);
@@ -2208,7 +2212,9 @@ static void hatch_task(void *arg)
             if (!muse_wifi_connected()) {
                 s_auto_next_us = 0;
                 s_auto_backoff_us = AUTO_RETRY_MIN_US;
-            } else if (muse_hatch_configured() && now_us() >= s_auto_next_us) {
+            } else if (muse_hatch_configured()
+                       && (now_us() >= s_auto_next_us || (s_auto_next_us == INT64_MAX && muse_settings_pushes_on()))) {
+                /* Closed when idle, then All messages turned on: connect again for pushes. */
                 if (ensure_connected()) {
                     s_auto_next_us = INT64_MAX;   /* until it drops */
                     s_auto_backoff_us = AUTO_RETRY_MIN_US;
@@ -2251,8 +2257,8 @@ static void hatch_task(void *arg)
         int64_t t = now_us();
         if (t - s_conn.last_rx_us > DEAD_US) {
             drop_connection("server went quiet");
-        } else if (s_turn.phase == P_IDLE && t - s_conn.last_use_us > IDLE_CLOSE_US && muse_state_on_battery()) {
-            /* On USB the connection stays up, so pushes keep arriving. */
+        } else if (s_turn.phase == P_IDLE && t - s_conn.last_use_us > IDLE_CLOSE_US && !muse_settings_pushes_on()) {
+            /* With All messages on it stays up, battery or not, so pushes keep arriving. */
             disconnect("idle");
             muse_hatch_report(MUSE_HATCH_UNTESTED, "");
             s_auto_next_us = INT64_MAX;   /* the next turn connects */

@@ -981,6 +981,13 @@ static void on_speaker_sw(lv_event_t *e)
     muse_settings_set_speaker_on(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
 }
 
+/* Off (the default): only replies to the talk button are played, and the
+ * connection may close when idle, which saves battery. */
+static void on_pushes_sw(lv_event_t *e)
+{
+    muse_settings_set_pushes_on(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
+}
+
 static void on_volume(lv_event_t *e)
 {
     int v = lv_slider_get_value(s_vol_sl);
@@ -1020,6 +1027,7 @@ static void build_sound_page(lv_obj_t *tile)
     lv_obj_t *list;
     s_sound = page(tile, "SOUND", true, &list);
     s_spk_sw = switch_row(list, "Speaker", muse_settings_speaker_on(), on_speaker_sw);
+    switch_row(list, "All messages", muse_settings_pushes_on(), on_pushes_sw);
     s_vol_sl = slider(list, "Volume", 0, 100, muse_settings_volume(), &s_vol_val, on_volume);
     s_gain_sl = slider(list, "Mic gain", 0, MUSE_MIC_GAIN_MAX / 3, muse_settings_mic_gain() / 3, &s_gain_val, on_gain);
 

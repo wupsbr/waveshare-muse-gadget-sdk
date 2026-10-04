@@ -34,6 +34,7 @@ static const char *TAG = "muse_settings";
 static struct {
     uint8_t volume;
     bool speaker_on;
+    bool pushes_on;
     uint8_t mic_gain;
     uint8_t brightness;
     uint16_t sleep_s;
@@ -118,6 +119,9 @@ esp_err_t muse_settings_init(void)
     if (nvs_get_u8(s_nvs, "speaker", &b) == ESP_OK) {
         s.speaker_on = b;
     }
+    if (nvs_get_u8(s_nvs, "pushes", &b) == ESP_OK) {
+        s.pushes_on = b;
+    }
     load_u8("mic_gain", &s.mic_gain);
     load_u8("bright", &s.brightness);
     nvs_get_u16(s_nvs, "sleep_s", &s.sleep_s);
@@ -136,6 +140,7 @@ esp_err_t muse_settings_init(void)
     s.volume = clampi(s.volume, 0, 100);
     s.mic_gain = clampi(s.mic_gain, 0, MUSE_MIC_GAIN_MAX);
     s.brightness = clampi(s.brightness, 10, 100);
+    ESP_LOGI(TAG, "all messages %s", s.pushes_on ? "on" : "off");
     ESP_LOGI(TAG, "vol %d%s, mic %d dB, bright %d, sleep %ds, wifi %s (%s), ble %s, muse %s",
              s.volume, s.speaker_on ? "" : " (speaker off)", s.mic_gain, s.brightness, s.sleep_s, s.wifi_on ? "on" : "off",
              "network saved by Link", s.ble_on ? "on" : "off", s.token[0] ? "token set" : "no token");
@@ -149,6 +154,7 @@ void muse_settings_set_listener(muse_setting_cb_t cb)
 
 int muse_settings_volume(void) { return s.volume; }
 bool muse_settings_speaker_on(void) { return s.speaker_on; }
+bool muse_settings_pushes_on(void) { return s.pushes_on; }
 int muse_settings_mic_gain(void) { return s.mic_gain; }
 int muse_settings_brightness(void) { return s.brightness; }
 int muse_settings_sleep_s(void) { return s.sleep_s; }
@@ -203,6 +209,13 @@ void muse_settings_set_speaker_on(bool on)
     s.speaker_on = on;
     save_u8("speaker", on);
     notify(MUSE_SETTING_SPEAKER);
+}
+
+void muse_settings_set_pushes_on(bool on)
+{
+    s.pushes_on = on;
+    save_u8("pushes", on);
+    notify(MUSE_SETTING_PUSHES);
 }
 
 void muse_settings_set_mic_gain(int db)
