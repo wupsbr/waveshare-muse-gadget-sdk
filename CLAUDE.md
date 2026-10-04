@@ -135,10 +135,11 @@ BOOT 5 s resets setup.
 - **Touch volume:** `muse_ui.c` `volume_drag`.
   - A vertical drag on the face tile; horizontal stays the settings swipe.
   - The level is saved on release.
-- **Avatar reactions:** `muse_pose_t`'s `dizzy`, `sleepy` and `waking` (`muse_pixel.h`), timed in `muse_state.c`.
+- **Avatar reactions:** `muse_pose_t`'s `dizzy`, `sleepy`, `waking` and `tickle` (`muse_pixel.h`), timed in `muse_state.c`.
   - Dizzy: shaking. `muse_imu.c` (QMI8658, probed at 0x6B/0x6A from each board's `init()`) feeds `muse_input.c` `check_shake`.
   - Sleepy: `check_sleep` drowses for `MUSE_SLEEPY_S` before auto-sleep, and plays two soft snores (`muse_voice_request_snore`).
   - Waking: plays when the screen wakes, or when drowsing is interrupted.
+  - Tickle: rubbing (4 reversals in 1 s within 15% of the screen) or 4 quick taps in 1.2 s on the face tile, while idle. `muse_ui.c` `touch_read` wraps the board's touch read to sample every 15 ms; `on_touch` counts taps; `tickle_poll` takes the press from LVGL and undoes a volume drag or a slide to settings. Progress waits below `MUSE_TICKLE_HOLD` while it goes on (`muse_state_tickle_hold`).
   - Jollybot (`avatar/muse_pixel.c`) draws them in this fork (`react_setup` and what it drives). Those additions, like Jollybot, are **not** under the Apache License: keep Meta's copyright line and the notice under it, never add an Apache header, and keep them in their own commit so they can be removed on Meta's request.
 - **Battery:** each board's `read_power`.
   - The 1.85C infers USB from voltage trends, because it has no VBUS or charge pin.

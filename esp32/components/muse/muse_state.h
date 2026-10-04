@@ -115,3 +115,16 @@ float muse_state_sleepy(void);
 
 /* Waking: the screen came on (MUSE_WAKING_S), or drowsing was interrupted. */
 float muse_state_waking(void);
+
+/*
+ * Tickle: rubbed or tapped quickly on the screen (MUSE_TICKLE_S). While the
+ * tickling goes on, progress waits below MUSE_TICKLE_HOLD; once nothing has
+ * held it for 0.4 s it runs on to 1. Shown only while idle.
+ *
+ * muse_state_start_tickle() starts it (true), or, while it's still giggling,
+ * only holds it (false). muse_state_tickle_hold() holds it, if it's running
+ * and not yet winding down (true if so). Both poke and end drowsing quietly.
+ */
+bool muse_state_start_tickle(void);
+bool muse_state_tickle_hold(void);
+float muse_state_tickle(void);

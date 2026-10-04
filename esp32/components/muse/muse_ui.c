@@ -161,6 +161,42 @@ static int s_drag_vol;
 static float s_vol_hide_at;     /* 0 once fading */
 
 /*
+ * Touch boards: tickling Muse's screen, where a drag could start, while idle.
+ * Rubbing is RUB_TURNS reversals (each a move of s_rub_step back) within
+ * RUB_WINDOW_MS under one press that stays within s_rub_span; a flurry is
+ * TAP_COUNT quick taps within TAP_WINDOW_MS.
+ */
+#define RUB_TURNS 4
+#define RUB_WINDOW_MS 1000
+#define TAP_COUNT 4
+#define TAP_MAX_MS 250
+#define TAP_WINDOW_MS 1200
+static lv_indev_read_cb_t s_touch_read;   /* the board's, which touch_read wraps */
+static int s_rub_step, s_rub_span;
+typedef struct {
+    int dir;                /* -1, 1, or 0 until it has moved a step */
+    int32_t ext;            /* the farthest it has gone that way */
+    uint32_t at[RUB_TURNS]; /* when it last reversed (ms) */
+    int n;
+} rub_axis_t;
+static struct {
+    bool down;              /* pressed at the last read */
+    bool watch;             /* this press could be a rub */
+    bool claimed;           /* it is: LVGL ignores the rest of it */
+    lv_point_t lo, hi;      /* where it has been since the rub (re)started */
+    rub_axis_t ax[2];       /* x, y */
+    int turns;              /* reversals since then */
+    bool more, hit;         /* a reversal / RUB_TURNS of them, for frame_tick */
+} s_rub;
+static struct {
+    bool watch;             /* this press could be a tap */
+    uint32_t down_ms;
+    lv_point_t at;
+    uint32_t at_ms[TAP_COUNT];
+    int n;
+} s_tap;
+
+/*
  * While Muse is thinking or speaking it shrinks to make room for the reply:
  * a little when the reply is heard, over a few lines to follow along, and
  * to the top when it's only read, over a page.
@@ -455,6 +491,9 @@ static void build_button_icons(lv_obj_t *face)
 static void on_canvas_clicked(lv_event_t *e)
 {
     (void)e;
+    if (muse_state_tickle() > 0) {
+        return;   /* a tap that keeps the tickling going, not a pet */
+    }
     muse_state_make_happy();
 }
 
@@ -978,6 +1017,19 @@ static void vol_faded(lv_anim_t *a)
     lv_obj_add_flag(a->var, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void fade_volume(void)
+{
+    s_vol_hide_at = 0;
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_vol);
+    lv_anim_set_exec_cb(&a, set_vol_opa);
+    lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_duration(&a, VOL_FADE_MS);
+    lv_anim_set_completed_cb(&a, vol_faded);
+    lv_anim_start(&a);
+}
+
 static void show_volume(int v, float now)
 {
     lv_anim_delete(s_vol, set_vol_opa);
@@ -1026,15 +1078,7 @@ static void volume_drag(float now)
         }
         s_drag = DRAG_NONE;
         if (s_vol_hide_at > 0 && now >= s_vol_hide_at) {
-            s_vol_hide_at = 0;
-            lv_anim_t a;
-            lv_anim_init(&a);
-            lv_anim_set_var(&a, s_vol);
-            lv_anim_set_exec_cb(&a, set_vol_opa);
-            lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-            lv_anim_set_duration(&a, VOL_FADE_MS);
-            lv_anim_set_completed_cb(&a, vol_faded);
-            lv_anim_start(&a);
+            fade_volume();
         }
         return;
     }
@@ -1045,7 +1089,9 @@ static void volume_drag(float now)
     }
     int dx = abs(p.x - s_drag_at.x), dy = abs(p.y - s_drag_at.y);
     if (s_drag == DRAG_WATCH) {
-        if (lv_indev_get_scroll_obj(s_indev) || lv_obj_get_scroll_x(s_tv) != 0 || dx >= s_vol_step_px) {
+        /* Twice back before a step is a wiggle (maybe a rub), not a drag. */
+        if (lv_indev_get_scroll_obj(s_indev) || lv_obj_get_scroll_x(s_tv) != 0 || dx >= s_vol_step_px
+            || s_rub.turns >= 2) {
             s_drag = DRAG_OTHER;
         } else if (dy >= s_vol_step_px && dy > 2 * dx) {
             s_drag = DRAG_VOLUME;
@@ -1068,6 +1114,137 @@ static void volume_drag(float now)
         show_volume(v, now);
     }
     s_vol_hide_at = now + VOL_SHOW_S;   /* up while the finger is */
+}
+
+/* Push a touch's time; true if the last `len` fit in `window` ms. */
+static bool within(uint32_t *ring, int len, int *n, uint32_t ms, uint32_t window)
+{
+    ring[*n % len] = ms;
+    if (++*n >= 2 * len) {
+        *n -= len;
+    }
+    return *n >= len && ms - ring[*n % len] <= window;
+}
+
+/* Starts tickle on a hit, else only keeps it going; true if it's on. */
+static bool tickle(bool hit, const char *how)
+{
+    if (!hit) {
+        return muse_state_tickle_hold();
+    }
+    if (muse_state_start_tickle()) {
+        ESP_LOGI(TAG, "tickled (%s)", how);
+    }
+    return true;
+}
+
+static void rub_restart(lv_point_t p)
+{
+    s_rub.lo = s_rub.hi = p;
+    for (int i = 0; i < 2; i++) {
+        s_rub.ax[i] = (rub_axis_t){ .ext = i ? p.y : p.x };
+    }
+    s_rub.turns = 0;
+}
+
+/*
+ * The board's touch read, then the rub detector. It runs on every read
+ * (CONFIG_LV_DEF_REFR_PERIOD, 15 ms) rather than per frame: frames are 40 ms
+ * or more while Muse is drawn, which is only two or three points per stroke
+ * of a quick rub, and would cut its turns short. Same task as frame_tick.
+ */
+static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    s_touch_read(indev, data);
+    bool down = data->state == LV_INDEV_STATE_PRESSED;
+    lv_point_t p = data->point;
+    if (down && !s_rub.down) {
+        /* A new press: on_touch, right after this read, says if it's watched. */
+        s_rub.watch = s_rub.claimed = false;
+        rub_restart(p);
+    }
+    s_rub.down = down;
+    if (!down || !s_rub.watch) {
+        return;
+    }
+    s_rub.lo.x = LV_MIN(s_rub.lo.x, p.x);
+    s_rub.lo.y = LV_MIN(s_rub.lo.y, p.y);
+    s_rub.hi.x = LV_MAX(s_rub.hi.x, p.x);
+    s_rub.hi.y = LV_MAX(s_rub.hi.y, p.y);
+    if (s_rub.hi.x - s_rub.lo.x > s_rub_span || s_rub.hi.y - s_rub.lo.y > s_rub_span) {
+        rub_restart(p);   /* gone too far for a rub: a drag or a swipe */
+        return;
+    }
+    uint32_t ms = lv_tick_get();
+    for (int i = 0; i < 2; i++) {
+        rub_axis_t *a = &s_rub.ax[i];
+        int32_t v = i ? p.y : p.x;
+        if (!a->dir) {
+            if (LV_ABS(v - a->ext) >= s_rub_step) {
+                a->dir = v > a->ext ? 1 : -1;
+                a->ext = v;
+            }
+        } else if ((v - a->ext) * a->dir > 0) {
+            a->ext = v;
+        } else if ((a->ext - v) * a->dir >= s_rub_step) {
+            a->dir = -a->dir;
+            a->ext = v;
+            s_rub.turns++;
+            s_rub.more = true;
+            s_rub.hit |= within(a->at, RUB_TURNS, &a->n, ms, RUB_WINDOW_MS);
+        }
+    }
+}
+
+/* Press and release, before the widgets hear of them (so before a tap pets). */
+static void on_touch(lv_event_t *e)
+{
+    lv_point_t p;
+    lv_indev_get_point(s_indev, &p);
+    uint32_t ms = lv_tick_get();
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        bool ok = muse_state_mode(NULL) == MUSE_MODE_IDLE && drag_can_start(&p);
+        s_rub.watch = s_tap.watch = ok;
+        s_tap.down_ms = ms;
+        s_tap.at = p;
+        return;
+    }
+    /* Released: a quick, still tap counts towards a flurry. */
+    if (!s_tap.watch || ms - s_tap.down_ms > TAP_MAX_MS || lv_indev_get_scroll_obj(s_indev)
+        || LV_ABS(p.x - s_tap.at.x) > 2 * s_rub_step || LV_ABS(p.y - s_tap.at.y) > 2 * s_rub_step
+        || muse_state_mode(NULL) != MUSE_MODE_IDLE) {
+        return;
+    }
+    s_tap.watch = false;
+    tickle(within(s_tap.at_ms, TAP_COUNT, &s_tap.n, ms, TAP_WINDOW_MS), "taps");
+}
+
+/*
+ * Each frame, after volume_drag: a rub that touch_read caught starts or keeps
+ * the tickle going. The first time in a press it takes the press from LVGL,
+ * as the volume drag does, so it doesn't tap Muse or swipe to settings, puts
+ * the face back if a sideways rub had begun sliding it, and undoes a volume
+ * drag that turned out to be a rub.
+ */
+static void tickle_poll(void)
+{
+    bool hit = s_rub.hit, more = s_rub.more;
+    s_rub.hit = s_rub.more = false;
+    if (!more || !s_rub.watch || !s_rub.down || muse_state_mode(NULL) != MUSE_MODE_IDLE || !tickle(hit, "rub")
+        || s_rub.claimed) {
+        return;
+    }
+    s_rub.claimed = true;
+    if (s_drag == DRAG_VOLUME) {
+        muse_audio_set_volume(muse_settings_volume());
+        fade_volume();
+    }
+    s_drag = DRAG_OTHER;
+    lv_indev_reset(s_indev, NULL);   /* drops a scroll without throwing it */
+    lv_indev_wait_release(s_indev);
+    if (lv_obj_get_scroll_x(s_tv) != 0) {
+        lv_tileview_set_tile(s_tv, s_face, LV_ANIM_OFF);
+    }
 }
 
 static void on_cover_event(lv_event_t *e)
@@ -1601,6 +1778,7 @@ static void frame_tick(lv_timer_t *timer)
     muse_mode_t mode = muse_state_mode(&mode_t);
     float now = (float)esp_timer_get_time() / 1e6f;
     volume_drag(now);   /* first: a release still saves the level whatever's on screen */
+    tickle_poll();
 
     if (mode != s_last_mode) {
         if (mode == MUSE_MODE_LISTENING) {
@@ -1639,6 +1817,7 @@ static void frame_tick(lv_timer_t *timer)
         .dizzy = muse_state_dizzy(),
         .sleepy = muse_state_sleepy(),
         .waking = muse_state_waking(),
+        .tickle = muse_state_tickle(),
     };
     muse_pixel_render(&pose);
     invalidate_muse();
@@ -1692,6 +1871,15 @@ esp_err_t muse_ui_start(void)
         muse_menu_build(lv_screen_active(), s_w, s_h);
     }
     build_overlays();
+    if (s_tv && s_indev) {
+        int side = LV_MIN(s_w, s_h);
+        s_rub_step = LV_MAX(side * 2 / 100, 6);
+        s_rub_span = side * 15 / 100;
+        s_touch_read = lv_indev_get_read_cb(s_indev);
+        lv_indev_set_read_cb(s_indev, touch_read);
+        lv_indev_add_event_cb(s_indev, on_touch, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(s_indev, on_touch, LV_EVENT_RELEASED, NULL);
+    }
     lv_timer_create(frame_tick, muse_board->frame_ms, NULL);
     s_ready = true;
     muse_board->display_unlock();

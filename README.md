@@ -35,6 +35,7 @@ The short version is below; [`docs/CHANGES-FROM-UPSTREAM.md`](docs/CHANGES-FROM-
 | 🧊 **Display freeze fix** | Cherry-picked from upstream [PR #34](https://github.com/facebookincubator/muse-gadget-sdk/pull/34): LVGL could starve the band sender and freeze the screen after ~20 min. | `boards/muse_lcd_bands.c` |
 | 🐕 **Watchdogs** | Turned back on for these boards: a stuck task panics with a backtrace and reboots instead of leaving the board dead until RST. | `devices/sdkconfig.muse-waveshare-s3-*` |
 | 😵 **Avatar reactions** | Shake Muse and it gets dizzy (boards with a QMI8658 accelerometer, found by probing). Before the screen goes dark Muse drowses for 4 s with a quiet snore, and it wakes up when the screen comes back on. Jollybot draws all three (see [New avatar reactions](#new-avatar-reactions)). | `components/muse/muse_imu.c`, `muse_input.c` (`check_sleep`, `check_shake`), `muse_voice.c` (`play_snore`) |
+| 🤭 **Tickle** | Rub Muse's face quickly back and forth, or tap it four times fast, and Muse giggles for as long as you keep going, then catches its breath. Taps, the volume drag and the swipe to settings work as before. It shows with an avatar that draws it. | `components/muse/muse_ui.c` (`touch_read`, `tickle_poll`), `muse_state.c` |
 | 🔐 **Secrets outside git** | The SDK token and API keys live in `secrets/` (gitignored) and are injected into each build's generated `sdkconfig`. | `secrets/`, `tools/muse/secrets.py` |
 
 ```mermaid

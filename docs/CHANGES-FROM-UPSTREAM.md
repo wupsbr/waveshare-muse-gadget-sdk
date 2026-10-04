@@ -23,6 +23,7 @@ The Linux SDK (`linux/`) and the skills (`skills/`) are unchanged.
 | 11 | Secrets outside git | Tooling | — | `secrets/`, `tools/muse/secrets.py`, `tools/muse/board.sh`, `.gitignore` |
 | 12 | Claude Code support | Tooling | — | `CLAUDE.md`, `.claude/skills/flash-muse-board/` |
 | 13 | Avatar reactions: dizzy when shaken, sleepy with a snore, waking | Feature | On (shake: boards with a QMI8658) | `muse_imu.*`, `muse_state.*`, `muse_input.c`, `muse_voice.*`, `muse_ui.c`, `muse_pixel.h`, the three board files |
+| 14 | Tickle: rub or tap Muse's face quickly and it giggles | Feature | On (touch boards) | `muse_ui.c`, `muse_state.*`, `muse_pixel.h` |
 
 ## 1–3. Three Waveshare boards with the full UI
 
@@ -178,6 +179,9 @@ that uses `muse_lcd_bands`.
 
 ## 13. Avatar reactions: dizzy, sleepy, waking
 
+The idea for these reactions (and the tickle one in #14) came from watching
+the author's 8-year-old son, Bernardo, play with Jollybot and Muse.
+
 The avatar's pose (`muse_pixel.h`, `muse_pose_t`) has three more fields, each
 0 when nothing is happening, else 0..1 through the reaction. The firmware
 drives them; drawing them is the avatar's job.
@@ -232,10 +236,61 @@ drives them; drawing them is the avatar's job.
   images, the menu and the volume drag work as before: the reactions only
   feed the avatar's pose.
 
+## 14. Tickle
+
+Rub Muse's face quickly, or tap it several times fast, and Muse is
+**tickled**: a startle, then a giggle for as long as you keep going, then it
+catches its breath. The pose has one more field, `pose.tickle` (0 when not
+tickled, else 0..1 through it, `MUSE_TICKLE_S` = 3 s), which the firmware
+drives.
+
+> **Drawing it is the avatar's job.** The tickle shows only with an avatar
+> that draws it. The default avatar's drawing isn't part of this change: it's
+> in a separate commit that isn't under the Apache License, like #13's.
+
+- **Where it counts.** On the face tile of a touch board, where the volume
+  drag could start: screen awake, no cover, pairing prompt, image or menu up,
+  the tiles not sliding, and not on the speaker button. Only while Muse is
+  idle (not listening, thinking or speaking).
+- **Rubbing.** Under one press, a short back-and-forth: 4 reversals within
+  1 s, on x or y, each a move back of at least 2% of the screen's shorter
+  side (7–9 px on these boards), while the press stays inside a box 15% of it
+  across (54–70 px). Going farther starts the count again, so a drag or a
+  swipe never adds up. The detector wraps the board's touch read
+  (`touch_read`) and so sees every read, every 15 ms
+  (`CONFIG_LV_DEF_REFR_PERIOD`), not just every 40 ms frame: at frame rate a
+  quick rub is only two or three points per stroke and loses its turns.
+- **Tap flurry.** 4 quick taps (each pressed under 250 ms, moving less than
+  two of those steps) within 1.2 s. The first tap pets Muse as before (the
+  hearts), and the next two only extend that. Once tickled, taps on Muse
+  keep the tickle going instead of petting.
+- **Keeping it going.** While it continues (more reversals or taps, at most
+  0.4 s apart), progress waits below `MUSE_TICKLE_HOLD` (0.8), inside the
+  giggle. Once it stops for 0.4 s, progress runs on to 1: the last of the
+  giggle, then about 0.6 s to catch its breath. Tickling again while it's
+  catching its breath starts a new tickle.
+- **The other gestures.**
+  - A tap pets Muse as before; the hearts (`pose.happy`) are still set, and
+    the avatar picks what to show.
+  - A vertical drag is still the volume. Two reversals before the drag has
+    gone a volume step mean a wiggle, and the volume drag stops watching that
+    press. A rub whose strokes are longer than a step can still take the
+    volume first; when it turns out to be a rub, the volume goes back to
+    where it was and isn't saved.
+  - A horizontal swipe still opens settings. A sideways rub can start the
+    tiles sliding; once it's a tickle, the press is taken from LVGL (as the
+    volume drag does, so it doesn't tap Muse or swipe on release) and the face
+    snaps back.
+- **State.** `muse_state_start_tickle()`, `muse_state_tickle_hold()` and
+  `muse_state_tickle()`. Starting or holding it keeps the screen awake and
+  ends drowsing quietly; the screen going to sleep, or a shake, ends it.
+  `muse_ui.c` logs `tickled (rub)` or `tickled (taps)` once per tickle.
+
 ## Not changed
 
 - The pairing protocol, the Noise session, the home-network tunnel and OTA.
 - Every other board, with two exceptions. #8 applies to every board that uses
   `muse_lcd_bands`. #13's drowsing, snore and waking apply to every board with
   the full UI, but a board only reacts to shakes if it calls `muse_imu_init()`.
+  #14 applies to every board with a touch screen and the full UI.
 - `linux/` and `skills/`.
