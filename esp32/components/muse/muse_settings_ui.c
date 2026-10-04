@@ -1120,9 +1120,8 @@ static void tick_sleep(void)
 /* ---------- Battery ---------- */
 
 /*
- * Just the level and how long it should last. The estimate is the drain
- * muse_battery measures since USB was unplugged: it needs ten minutes and a
- * percent used before it means anything.
+ * Just the level and how long it should last, at the drain of the last few
+ * minutes (muse_battery_eta, from the voltage).
  */
 static void build_battery_page(lv_obj_t *tile)
 {
@@ -1131,7 +1130,7 @@ static void build_battery_page(lv_obj_t *tile)
     s_batt_shown_us = 0;
     s_batt_level = info_row(list, "Battery");
     s_batt_left = info_row(list, "Time left");
-    note(list, "Time left is estimated from use since USB was unplugged, after about 10 minutes.");
+    note(list, "Time left follows the last few minutes of use, from about a minute after unplugging USB.");
 }
 
 static void tick_battery(void)
@@ -1154,16 +1153,12 @@ static void tick_battery(void)
 
     muse_battery_t b;
     muse_battery_read(&b);
-    int rate10, full_h;
+    int mins;
     if (p.charging) {
         set_text(s_batt_left, "Charging");
     } else if (!b.running) {
         set_text(s_batt_left, "On USB");
-    } else if (muse_battery_drain(&b, &rate10, &full_h)) {
-        /* What's left at the rate measured so far: what remains over what was
-         * used, times the time it took (not rate10, which rounds to 0 when slow). */
-        int used = b.pct_start - b.pct_now;
-        int mins = (int)(p.battery_pct * b.secs / (used * 60LL));
+    } else if (muse_battery_eta(p.battery_pct, &mins)) {
         if (mins >= 60) {
             snprintf(buf, sizeof(buf), "~%d h %02d min", mins / 60, mins % 60);
         } else {

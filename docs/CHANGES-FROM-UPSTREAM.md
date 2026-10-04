@@ -116,9 +116,15 @@ NVS as `pushes`.
 full-charge life, screen-off, light-sleep and CPU-busy shares, wakes, and the
 locks that kept the chip awake). This fork reduces it to two rows:
 - **Battery:** the percentage, with a charge symbol while charging.
-- **Time left:** what remains at the drain measured since USB was unplugged.
-  It reads `Estimating...` until there are 10 minutes and 1% of data, and
-  `Charging` / `On USB` otherwise.
+- **Time left:** what remains at the drain of the last five minutes, ready
+  about a minute after unplugging and updated every 10 s.
+  - Upstream's estimate waits for the 1% gauge to move, which takes many
+    minutes. `muse_battery_eta` instead puts the voltage through the LiPo curve,
+    in tenths of a percent, every 10 s, and fits a least-squares slope over the
+    last 30 samples. The fit rides out ADC noise and the dips while Wi-Fi or the
+    speaker draws.
+  - It reads `Estimating...` while there's too little data or the level isn't
+    falling, and `Charging` / `On USB` on USB.
 
 The measurements themselves (`muse_battery.c`, `>power` on the console,
 `tools/muse/power.py`) are unchanged.

@@ -371,16 +371,95 @@ void muse_battery_init(void)
 #endif
 }
 
+/*
+ * Time left, from the voltage rather than the 1% gauge, which on a slow drain
+ * takes many minutes to move: every ETA_EVERY_S on battery the voltage goes
+ * through the LiPo curve the boards use, kept in tenths of a percent, and the
+ * slope of the last ETA_SAMPLES (a least-squares fit, which rides out ADC
+ * noise and the dips while Wi-Fi or the speaker draws) gives the drain.
+ */
+#define ETA_EVERY_S 10
+#define ETA_SAMPLES 30            /* five minutes */
+#define ETA_MIN_SAMPLES 6         /* about a minute before the first estimate */
+#define ETA_MAX_MIN (99 * 60)
+
+static struct {
+    int64_t t_s[ETA_SAMPLES];
+    int tenths[ETA_SAMPLES];
+    int n, next;
+    int64_t last_s;
+} s_eta;
+
+/* The StickS3 / Watcher LiPo curve, in tenths of a percent, unclamped above. */
+static int curve_tenths(int mv)
+{
+    int64_t v = mv;
+    int64_t t = (-v * v + 9016 * v - 19189000) / 1000;
+    return t < 0 ? 0 : t > 1000 ? 1000 : (int)t;
+}
+
+static void eta_reset(void)
+{
+    s_eta.n = s_eta.next = 0;
+    s_eta.last_s = 0;
+}
+
+static void eta_note(const muse_power_t *p)
+{
+    int64_t now_s = esp_timer_get_time() / 1000000;
+    if (s_eta.n && now_s - s_eta.last_s < ETA_EVERY_S) {
+        return;
+    }
+    int tenths = p->battery_mv > 2500 ? curve_tenths(p->battery_mv) : p->battery_pct * 10;
+    if (tenths <= 0) {
+        return;
+    }
+    s_eta.t_s[s_eta.next] = now_s;
+    s_eta.tenths[s_eta.next] = tenths;
+    s_eta.next = (s_eta.next + 1) % ETA_SAMPLES;
+    s_eta.n += s_eta.n < ETA_SAMPLES;
+    s_eta.last_s = now_s;
+}
+
+bool muse_battery_eta(int pct_now, int *mins)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool ok = false;
+    if (s_running && s_eta.n >= ETA_MIN_SAMPLES && pct_now > 0) {
+        double st = 0, sy = 0, stt = 0, sty = 0;
+        int64_t t0 = s_eta.t_s[(s_eta.next - s_eta.n + ETA_SAMPLES) % ETA_SAMPLES];
+        for (int i = 0; i < s_eta.n; i++) {
+            double t = (double)(s_eta.t_s[i] - t0) / 60.0;   /* minutes */
+            double y = s_eta.tenths[i];
+            st += t;
+            sy += y;
+            stt += t * t;
+            sty += t * y;
+        }
+        double den = s_eta.n * stt - st * st;
+        double slope = den > 0 ? (s_eta.n * sty - st * sy) / den : 0;   /* tenths of a percent per minute */
+        if (slope < -0.01) {
+            double m = pct_now * 10 / -slope;
+            *mins = m > ETA_MAX_MIN ? ETA_MAX_MIN : (int)m;
+            ok = true;
+        }
+    }
+    xSemaphoreGive(s_lock);
+    return ok;
+}
+
 void muse_battery_note_power(const muse_power_t *p, bool on_battery)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_power = *p;
     if (on_battery && !s_running) {
         start();
+        eta_reset();
     } else if (!on_battery && s_running) {
         stop();
     }
     if (s_running) {
+        eta_note(p);
         s_pct_now = p->battery_pct;
         s_mv_now = p->battery_mv;
         if (esp_timer_get_time() - s_saved_us >= SAVE_MS * 1000LL) {

@@ -63,6 +63,11 @@ void muse_battery_read(muse_battery_t *out);
  * percent an hour, and how many hours a full charge lasts at that rate. */
 bool muse_battery_drain(const muse_battery_t *b, int *rate10, int *full_h);
 
+/* Minutes left at the drain of the last few minutes on battery, measured from
+ * the voltage: ready about a minute after unplugging. False while there's too
+ * little to go on or the level isn't falling. */
+bool muse_battery_eta(int pct_now, int *mins);
+
 /* The same with every lock and CPU mode, as one line of JSON. */
 int muse_battery_json(char *buf, size_t cap);
 
