@@ -200,8 +200,11 @@ drives them; drawing them is the avatar's job.
 
 - **Dizzy (`pose.dizzy`, 4 s): shake Muse.**
   - `muse_imu.c` is a small QMI8658 driver: it probes I2C 0x6B then 0x6A,
-    checks `WHO_AM_I` (0x05), and runs the accelerometer alone at ±8 g,
-    125 Hz. Without the chip it logs once and does nothing.
+    checks `WHO_AM_I` (0x05), and configures it the way Waveshare's qmi8658
+    component does: accelerometer at ±8 g plus the gyroscope, both at 1 kHz.
+    With the accelerometer on its own, the AMOLED 1.8's chip accepts the
+    settings but never produces a sample. Without the chip it logs once and
+    does nothing.
   - The input task reads it every 20 ms, while the display isn't paused. It
     takes gravity out with a slow low-pass and counts **swings** of more than
     1.2 g. A shake is 3 swings, each the other way from the last, within

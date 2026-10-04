@@ -34,11 +34,13 @@ static const char *TAG = "muse_imu";
 #define REG_WHO_AM_I 0x00
 #define WHO_AM_I 0x05
 #define REG_CTRL1 0x02
-#define CTRL1_ADDR_AI 0x40      /* auto-increment; BE (0x20) clear: little-endian */
+#define CTRL1_VALUE 0x60        /* address auto-increment, as Waveshare's qmi8658 component sets it */
 #define REG_CTRL2 0x03
-#define CTRL2_8G_125HZ 0x26     /* aFS 010 = +-8 g, aODR 0110 = 125 Hz accelerometer only */
+#define CTRL2_8G_1KHZ 0x23      /* aFS 010 = +-8 g, aODR 0011 = 1 kHz */
+#define REG_CTRL3 0x04
+#define CTRL3_512DPS_1KHZ 0x43  /* gFS 100 = 512 dps, gODR 0011 = 1 kHz */
 #define REG_CTRL7 0x08
-#define CTRL7_AEN 0x01          /* accelerometer on, gyroscope off */
+#define CTRL7_AEN_GEN 0x03      /* accelerometer and gyroscope on */
 #define REG_AX_L 0x35
 #define REG_RESET 0x60
 #define RESET_CMD 0xB0
@@ -81,11 +83,18 @@ static esp_err_t configure(void)
         return err;
     }
     vTaskDelay(pdMS_TO_TICKS(RESET_MS));
-    if ((err = reg_write(REG_CTRL1, CTRL1_ADDR_AI)) != ESP_OK || (err = reg_write(REG_CTRL7, 0)) != ESP_OK
-        || (err = reg_write(REG_CTRL2, CTRL2_8G_125HZ)) != ESP_OK) {
-        return err;   /* the datasheet configures with the sensors off */
+    /*
+     * Waveshare's qmi8658 component's sequence. With the accelerometer on its
+     * own (CTRL7 = 0x01) the AMOLED 1.8's QMI8658 takes the settings but never
+     * produces a sample (STATUS0 stays 0, data reads 0), so the gyroscope runs
+     * too; it costs well under a milliamp. Only the accelerometer is read.
+     */
+    if ((err = reg_write(REG_CTRL7, 0)) != ESP_OK || (err = reg_write(REG_CTRL1, CTRL1_VALUE)) != ESP_OK
+        || (err = reg_write(REG_CTRL2, CTRL2_8G_1KHZ)) != ESP_OK
+        || (err = reg_write(REG_CTRL3, CTRL3_512DPS_1KHZ)) != ESP_OK) {
+        return err;
     }
-    return reg_write(REG_CTRL7, CTRL7_AEN);
+    return reg_write(REG_CTRL7, CTRL7_AEN_GEN);
 }
 
 esp_err_t muse_imu_init(i2c_master_bus_handle_t bus)
@@ -118,7 +127,7 @@ esp_err_t muse_imu_init(i2c_master_bus_handle_t bus)
             s_dev = NULL;
             return err;
         }
-        ESP_LOGI(TAG, "QMI8658 at 0x%02x: accelerometer +-8 g, 125 Hz", addrs[i]);
+        ESP_LOGI(TAG, "QMI8658 at 0x%02x: accelerometer +-8 g, 1 kHz", addrs[i]);
     }
     if (!s_dev) {
         ESP_LOGI(TAG, "no QMI8658 IMU found: no shake reaction");
