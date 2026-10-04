@@ -127,7 +127,7 @@ BOOT 5 s resets setup.
   - Kconfig: `MUSE_ELEVENLABS_API_KEY`, `_VOICE_ID`, `_MODEL` (`eleven_flash_v2_5`).
   - Needs `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`: the ElevenLabs chain ends at a GlobalSign root that isn't in IDF's bundle.
   - Upstream removed server TTS (PR #12), so without a key replies are text.
-- **All messages (pushes):** off by default; Settings › Sound › All messages (`muse_settings_pushes_on`, NVS key `pushes`). When on, `on_event` → `push_begin`.
+- **All messages (pushes):** off by default; Settings › All messages (`muse_settings_pushes_on`, NVS key `pushes`). When on, `on_event` → `push_begin`.
   - Assistant messages that arrive with no turn pending open a reply-only turn.
   - `muse_voice.c` `play_push` plays it.
   - IDs already shown are remembered (`s_shown_ids`).
