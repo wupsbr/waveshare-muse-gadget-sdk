@@ -51,7 +51,16 @@ drive `esp_lcd` directly (no vendor BSP) with `esp_lv_adapter` +
 ## Identify the board
 
 All three enumerate as Espressif `303a:1001` "USB JTAG/serial debug unit"
-(`/dev/cu.usbmodem*` on macOS), so the descriptor doesn't tell them apart:
+(`/dev/cu.usbmodem*` on macOS). The model isn't in the descriptor, but the
+**MAC is its USB serial number**: `ioreg -p IOUSB -l -w0 | grep '"USB Serial Number"'`
+tells boards apart **without touching them**.
+
+**Never poll esptool to watch for a board.** Every `esptool` call resets the
+chip; a loop calling `read-mac` every few seconds boot-loops whatever is
+plugged in. Use the USB serial number (or `tools/muse/ports.py`) to wait for a
+board, and run esptool once you've decided to act.
+
+To find the model:
 
 1. Running this firmware: the boot log says `muse: board: <name>`, and
    `python3 esp32/tools/muse/chat.py --status` returns `"board"`.
@@ -118,11 +127,11 @@ BOOT 5 s resets setup.
   - Kconfig: `MUSE_ELEVENLABS_API_KEY`, `_VOICE_ID`, `_MODEL` (`eleven_flash_v2_5`).
   - Needs `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`: the ElevenLabs chain ends at a GlobalSign root that isn't in IDF's bundle.
   - Upstream removed server TTS (PR #12), so without a key replies are text.
-- **Pushes:** `on_event` → `push_begin`.
+- **All messages (pushes):** off by default; Settings › Sound › All messages (`muse_settings_pushes_on`, NVS key `pushes`). When on, `on_event` → `push_begin`.
   - Assistant messages that arrive with no turn pending open a reply-only turn.
   - `muse_voice.c` `play_push` plays it.
   - IDs already shown are remembered (`s_shown_ids`).
-  - On USB, the idle disconnect is skipped.
+  - The idle disconnect is skipped and a closed session reconnects. Off behaves like upstream.
 - **Touch volume:** `muse_ui.c` `volume_drag`.
   - A vertical drag on the face tile; horizontal stays the settings swipe.
   - The level is saved on release.

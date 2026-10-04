@@ -18,12 +18,16 @@ If no port appears, run `system_profiler SPUSBHostDataType`. When nothing
 shows on the bus, it's the cable or the connection, not the firmware. Ask
 the user to try a data cable straight into the computer.
 
-For each port:
+Read the MAC without resetting the board, since it's the USB serial number:
+`ioreg -p IOUSB -l -w0 | grep '"USB Serial Number"'`. Then, once, per port:
 
 ```sh
-python -m esptool -p PORT chip-id     # chip, PSRAM, MAC
+python -m esptool -p PORT chip-id     # chip, PSRAM, MAC (resets the board)
 python -m esptool -p PORT flash-id    # flash size
 ```
+
+Never loop esptool to wait for a board to appear: each call resets it. Poll
+`ls /dev/cu.usbmodem*` or the USB serial numbers instead.
 
 ## 2. Back it up (first time only)
 
