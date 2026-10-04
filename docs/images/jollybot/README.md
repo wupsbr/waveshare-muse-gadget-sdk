@@ -1,7 +1,7 @@
 # Jollybot reaction previews
 
 These GIFs show Meta's Jollybot avatar with the complementary reactions this
-fork adds (dizzy, sleepy, waking), rendered on a computer from
+fork adds (dizzy, sleepy, waking, tickled), rendered on a computer from
 `esp32/avatar/muse_pixel.c`.
 
 Jollybot is Meta's character and is **not** covered by the Apache License.

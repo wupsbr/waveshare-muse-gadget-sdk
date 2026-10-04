@@ -35,7 +35,7 @@ The short version is below; [`docs/CHANGES-FROM-UPSTREAM.md`](docs/CHANGES-FROM-
 | 🧊 **Display freeze fix** | Cherry-picked from upstream [PR #34](https://github.com/facebookincubator/muse-gadget-sdk/pull/34): LVGL could starve the band sender and freeze the screen after ~20 min. | `boards/muse_lcd_bands.c` |
 | 🐕 **Watchdogs** | Turned back on for these boards: a stuck task panics with a backtrace and reboots instead of leaving the board dead until RST. | `devices/sdkconfig.muse-waveshare-s3-*` |
 | 😵 **Avatar reactions** | Shake Muse and it gets dizzy (boards with a QMI8658 accelerometer, found by probing). Before the screen goes dark Muse drowses for 4 s with a quiet snore, and it wakes up when the screen comes back on. Jollybot draws all three (see [New avatar reactions](#new-avatar-reactions)). | `components/muse/muse_imu.c`, `muse_input.c` (`check_sleep`, `check_shake`), `muse_voice.c` (`play_snore`) |
-| 🤭 **Tickle** | Rub Muse's face quickly back and forth, or tap it four times fast, and Muse giggles for as long as you keep going, then catches its breath. Taps, the volume drag and the swipe to settings work as before. It shows with an avatar that draws it. | `components/muse/muse_ui.c` (`touch_read`, `tickle_poll`), `muse_state.c` |
+| 🤭 **Tickle** | Rub Muse's face quickly back and forth, or tap it four times fast, and Muse giggles for as long as you keep going, then catches its breath. Taps, the volume drag and the swipe to settings work as before. Jollybot draws it (see [New avatar reactions](#new-avatar-reactions)). | `components/muse/muse_ui.c` (`touch_read`, `tickle_poll`), `muse_state.c` |
 | 🔐 **Secrets outside git** | The SDK token and API keys live in `secrets/` (gitignored) and are injected into each build's generated `sdkconfig`. | `secrets/`, `tools/muse/secrets.py` |
 
 ```mermaid
@@ -55,25 +55,30 @@ flowchart LR
 
 ## New avatar reactions
 
-Muse now reacts to the world a little, like a toy that gets dizzy when you shake it:
+Muse now reacts to the world a little, like a toy that gets dizzy when you shake it.
+
+> 💡 These ideas — getting dizzy, dozing off with a snore, waking up, and now giggling when tickled — came from watching my 8-year-old son **Bernardo** play with Jollybot and Muse. Thanks, Bernardo!
+
 
 <table>
   <tr>
     <td align="center"><img src="docs/images/jollybot/jollybot-dizzy.gif" width="200" alt="Jollybot reels with spiral eyes and orbiting stars, plops down to sit dazed, shakes it off and stands back up"><br><b>Dizzy</b><br><sub>Shake the board</sub></td>
     <td align="center"><img src="docs/images/jollybot/jollybot-sleepy.gif" width="200" alt="Jollybot yawns, his eyelids droop, he closes his eyes and snores with rising Z letters while the screen dims"><br><b>Sleepy</b><br><sub>Right before the screen goes dark (with a soft snore)</sub></td>
     <td align="center"><img src="docs/images/jollybot/jollybot-waking.gif" width="200" alt="Jollybot pops his eyes open, blinks twice, stretches with arms up and does a happy bounce"><br><b>Waking</b><br><sub>When the screen comes back on</sub></td>
+    <td align="center"><img src="docs/images/jollybot/jollybot-tickle.gif" width="200" alt="Jollybot startles, then squirms and laughs with squeezed eyes, tears of joy and HA marks, and catches his breath"><br><b>Tickled</b><br><sub>Rub his face quickly, or tap fast</sub></td>
   </tr>
 </table>
 
 - **Dizzy** needs the QMI8658 accelerometer. The firmware probes for it at boot: the AMOLED 1.8 has one, and the log says whether the others do. Three quick back-and-forth swings count as a shake; a tap or picking it up doesn't.
 - **Sleepy** plays for the last 4 s before auto-sleep; touching or pressing anything cancels it. Two quiet snores play if Speaker is on.
 - **Waking** plays for 1.5 s every time the screen turns on.
+- **Tickled**: rub his face quickly back and forth, or tap it four times fast. He giggles for as long as you keep going, then catches his breath. A single tap still gives hearts.
 
 The timing, the sensor and the snore are part of the firmware (Apache 2.0). The drawing is in Jollybot itself — please read the note below.
 
 ### About the Jollybot avatar
 
-Jollybot (`esp32/avatar/`) is **Meta's character** and is **not** covered by the Apache License, as Meta's own README states. This fork adds complementary animations to it: dizzy, sleepy and waking, plus the previews above. **These animations and images are not covered by the Apache License either**; they share the character's status. We claim no rights to Jollybot or to these additions and charge nothing for them. They're a fan contribution, and we'll remove them at Meta's request: [wupsbr@gmail.com](mailto:wupsbr@gmail.com). With the reactions idle, Jollybot renders exactly as Meta made him.
+Jollybot (`esp32/avatar/`) is **Meta's character** and is **not** covered by the Apache License, as Meta's own README states. This fork adds complementary animations to it: dizzy, sleepy, waking and tickled, plus the previews above. **These animations and images are not covered by the Apache License either**; they share the character's status. We claim no rights to Jollybot or to these additions and charge nothing for them. They're a fan contribution, and we'll remove them at Meta's request: [wupsbr@gmail.com](mailto:wupsbr@gmail.com). With the reactions idle, Jollybot renders exactly as Meta made him.
 
 ## Quick start
 

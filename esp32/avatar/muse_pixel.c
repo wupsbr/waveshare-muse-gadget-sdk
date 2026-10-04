@@ -2,7 +2,7 @@
 //
 // Jollybot is Meta's character and is not covered by the Apache License.
 // The waveshare-muse-gadget-sdk fork adds complementary reactions to it
-// (dizzy, sleepy, waking: react_setup and what it drives). These additions
+// (dizzy, sleepy, waking, tickled: react_setup and what it drives). These additions
 // are NOT covered by the Apache License either; they share the character's
 // status. The fork claims no rights to Jollybot or to these additions,
 // charges nothing for them, and will remove them at Meta's request
@@ -54,6 +54,7 @@ enum {
     C_WHITE,
     C_STAR,      /* dizzy stars */
     C_STARD,
+    C_TEAR,      /* tears of joy */
     C_COUNT,
 };
 
@@ -101,6 +102,7 @@ static const uint32_t FIXED[C_COUNT] = {
     [C_WHITE] = 0xffffff,
     [C_STAR] = 0xffd84a,
     [C_STARD] = 0xe89a2c,
+    [C_TEAR] = 0x9fdcff,
 };
 
 static rgb_t s_scheme[5];      /* live, blended: f0..f3, acc */
@@ -864,7 +866,7 @@ static void draw_alert(int x, int y)
 }
 
 /* ---------------------------------------------------------------------------
- * Reactions: dizzy (shaken), sleepy (screen about to sleep), waking
+ * Reactions: dizzy (shaken), sleepy (screen about to sleep), waking, tickled
  * ------------------------------------------------------------------------- */
 
 static inline float smooth(float e0, float e1, float x)
@@ -960,14 +962,41 @@ static void draw_yawn(int x, int y, float open)
     }
 }
 
-typedef enum { RE_NONE, RE_DIZZY, RE_SLEEPY, RE_WAKING } react_kind_t;
+/* A belly laugh: a flat top and a round bottom, 2..4 tall, the tongue showing when wide open. */
+static void draw_laugh(int x, int y, float open)
+{
+    int h = 2 + iround(clampf(open, 0, 1) * 2.0f);
+    for (int j = 0; j < h; j++) {
+        int inset = j == h - 1 ? 1 : 0;
+        for (int i = inset; i < 5 - inset; i++) {
+            bool tongue = h >= 3 && j == h - 2 && i > 0 && i < 4;
+            px(x - 2 + i, y + j, tongue ? C_TONGUE : C_MOUTH);
+        }
+    }
+}
+
+/* A little "HA" popping up beside the head while he giggles. */
+static void draw_ha(int x, int y)
+{
+    static const char *const HA[] = { "#.#..#.", "#.#.#.#", "###.###", "#.#.#.#", "#.#.#.#" };
+    stamp(HA, 5, x, y, C_WHITE, C_WHITE);
+}
+
+typedef enum { RE_NONE, RE_DIZZY, RE_SLEEPY, RE_WAKING, RE_TICKLE } react_kind_t;
+
+/* Giggling runs on the clock at 3.2 Hz: each "ha" is a bounce, a squish and an open mouth (0..1). */
+#define GIGGLE_HZ 3.2f
+static inline float giggle_beat(float ts)
+{
+    return 0.5f - 0.5f * cosf(ts * GIGGLE_HZ * TAU);
+}
 
 /* How a reaction bends the idle pose. Everything is neutral at the ends of a
  * reaction that hands back to idle, so it blends in. */
 typedef struct {
     react_kind_t kind;
     float p;            /* progress 0..1 */
-    float ts;           /* seconds into the reaction */
+    float ts;           /* seconds into the reaction (tickle: the clock, as it loops while held) */
     float sway;         /* head top x offset, px (the body shears about the feet) */
     float squash;       /* times the usual squash: <1 squat, >1 stretched tall */
     float bob;          /* extra drop, px */
@@ -979,6 +1008,7 @@ typedef struct {
     float glow;         /* aura and sparkle multiplier */
     float dim;          /* palette dimming */
     float gaze;         /* gaze multiplier */
+    float blush;        /* cheek strength */
 } react_t;
 
 static void react_setup(const muse_pose_t *p, react_t *r)
@@ -987,6 +1017,7 @@ static void react_setup(const muse_pose_t *p, react_t *r)
     r->squash = 1;
     r->glow = 1;
     r->gaze = 1;
+    r->blush = 0.55f;
     /* The reactions are idle behaviour; other modes keep their own look. */
     if (p->mode != MUSE_MODE_IDLE) {
         return;
@@ -995,6 +1026,10 @@ static void react_setup(const muse_pose_t *p, react_t *r)
         r->kind = RE_DIZZY;
         r->p = clampf(p->dizzy, 0, 1);
         r->ts = r->p * MUSE_DIZZY_S;
+    } else if (p->tickle > 0) {
+        r->kind = RE_TICKLE;
+        r->p = clampf(p->tickle, 0, 1);
+        r->ts = p->t;   /* progress hovers while the tickling goes on, so the giggle runs on time */
     } else if (p->waking > 0) {
         r->kind = RE_WAKING;
         r->p = clampf(p->waking, 0, 1);
@@ -1072,6 +1107,31 @@ static void react_setup(const muse_pose_t *p, react_t *r)
         r->arm_ang = 2.9f - 0.4f * (1 - stretch) + (1 - stretch) * up * 0.25f * sinf(ts * 18.0f);
         r->gaze = smooth(0.8f, 1.0f, d);
         r->glow = 0.2f + 0.8f * smooth(0.0f, 0.45f, d);
+        break;
+    }
+    case RE_TICKLE: {
+        /* A startled flinch, then he squirms and giggles for as long as it lasts. */
+        float startle = window(d, 0.0f, 0.02f, 0.08f, 0.15f);
+        float g = smooth(0.08f, 0.15f, d) * (1 - smooth(0.8f, 0.95f, d));
+        float hug = smooth(0.08f, 0.15f, d) * (1 - smooth(0.84f, 1.0f, d));
+        float ph = ts * GIGGLE_HZ * TAU;
+        float beat = giggle_beat(ts);
+        r->sway = g * 1.8f * sinf(ph);
+        r->hop = 2.0f * startle + g * 1.2f * beat;
+        /* Catching his breath: a deep breath in, and a happy sigh out. */
+        float in = window(d, 0.8f, 0.85f, 0.86f, 0.9f);
+        float out = window(d, 0.88f, 0.92f, 0.94f, 1.0f);
+        r->squash = 1 + 0.08f * startle - 0.05f * g * (1 - beat) + 0.05f * in - 0.05f * out;
+        r->face_dy = -0.6f * startle + 0.5f * out;
+        /* Arms fly up on the startle, then hug the tummy, jiggling with each giggle. */
+        r->arm_k = clampf(startle + hug, 0, 1);
+        float s = startle / (startle + hug + 1e-6f);
+        r->arm_dx = -1.0f * s + (4.5f + 0.5f * g * beat) * (1 - s);
+        r->arm_dy = -7.0f * s + (4.5f - 0.8f * g * beat) * (1 - s);
+        r->arm_ang = 2.2f * s + (0.95f + 0.2f * g * sinf(ph)) * (1 - s);
+        r->gaze = smooth(0.9f, 1.0f, d);
+        r->glow = 1 + 0.3f * g;
+        r->blush = 0.55f + 0.45f * g;
         break;
     }
     default:
@@ -1174,6 +1234,39 @@ static bool react_face(const react_t *r, const avatar_t *j, float eye_y, float e
         }
         return true;
     }
+    case RE_TICKLE: {
+        float g = smooth(0.08f, 0.15f, d) * (1 - smooth(0.8f, 0.95f, d));
+        float beat = giggle_beat(ts);
+        if (d < 0.1f) {
+            draw_eye(j->fx + off - eye_dx, eye_y, 1, EYES_WIDE, 0, 0);
+            draw_eye(j->fx + off + eye_dx, eye_y, 1, EYES_WIDE, 0, 0);
+            draw_mouth(iround(mx), my, MOUTH_O, 0);
+        } else if (d < 0.86f) {
+            draw_squeeze_eye(lx, ey, false);
+            draw_squeeze_eye(rx, ey, true);
+            /* Tears of joy at the outer corners. */
+            if (g > 0.5f) {
+                px(lx - 3, ey + 1, C_WHITE);
+                px(lx - 3, ey + 2, C_TEAR);
+                px(rx + 2, ey + 1, C_WHITE);
+                px(rx + 2, ey + 2, C_TEAR);
+            }
+            draw_laugh(iround(mx), my, d < 0.8f ? beat : 0.5f * beat * (1 - smooth(0.8f, 0.86f, d)));
+        } else if (d < 0.96f) {
+            draw_eye(j->fx + off - eye_dx, eye_y, 1, EYES_HAPPY, 0, 0);
+            draw_eye(j->fx + off + eye_dx, eye_y, 1, EYES_HAPPY, 0, 0);
+            if (d > 0.88f && d < 0.93f) {
+                draw_mouth(iround(mx), my, MOUTH_O, 0);   /* phew */
+            } else {
+                draw_mouth(iround(mx), my, MOUTH_SMILE, 0);
+            }
+        } else {
+            draw_eye(j->fx + off - eye_dx, eye_y, open, EYES_NORMAL, gx, gy);
+            draw_eye(j->fx + off + eye_dx, eye_y, open, EYES_NORMAL, gx, gy);
+            draw_mouth(iround(mx), my, MOUTH_SMILE, 0);
+        }
+        return true;
+    }
     default:
         return false;
     }
@@ -1200,6 +1293,25 @@ static void draw_dizzy_stars(const react_t *r, float hx, float top, bool front)
         int y = iround(top - 3 + s * 3.0f);
         draw_star(x, y, front, a);
     }
+}
+
+/* HA HA popping up either side of the head, one per giggle burst. */
+static void draw_giggles(const react_t *r, float hx, float top)
+{
+    float g = smooth(0.12f, 0.2f, r->p) * (1 - smooth(0.76f, 0.84f, r->p));
+    if (g <= 0) {
+        return;
+    }
+    float bt = r->ts * 1.75f;
+    int k = (int)floorf(bt);
+    float ph = bt - (float)k;
+    if (g < 0.5f || ph > 0.7f) {
+        return;
+    }
+    /* Pops up a pixel, then drifts up a little. */
+    int x = iround(k & 1 ? hx + 15 : hx - 22);
+    int y = iround(top + 7 - (ph < 0.08f ? 0.0f : 1.0f + ph * 3.0f));
+    draw_ha(x, y);
 }
 
 /* z Z Z drifting up and away from beside the head. */
@@ -1493,8 +1605,8 @@ void muse_pixel_render(const muse_pose_t *p)
     bool react_drawn = false;
     if (react) {
         float off = j.shear * (j.pivot - (eye_y + 2));
-        draw_blush(iround(j.fx + off - j.fa * 0.72f), iround(eye_y + 2), 0.55f);
-        draw_blush(iround(j.fx + off + j.fa * 0.72f), iround(eye_y + 2), 0.55f);
+        draw_blush(iround(j.fx + off - j.fa * 0.72f), iround(eye_y + 2), re.blush);
+        draw_blush(iround(j.fx + off + j.fa * 0.72f), iround(eye_y + 2), re.blush);
         react_drawn = react_face(&re, &j, eye_y, eye_dx, blink, s_eyes.gx * re.gaze, s_eyes.gy * re.gaze);
     }
     if (!react_drawn) {
@@ -1539,6 +1651,8 @@ void muse_pixel_render(const muse_pose_t *p)
         draw_dizzy_stars(&re, j.cx + re.sway, top, true);
     } else if (re.kind == RE_SLEEPY) {
         draw_snore(&re, j.cx + re.sway, top);
+    } else if (re.kind == RE_TICKLE) {
+        draw_giggles(&re, j.cx + re.sway, top);
     }
 
 }

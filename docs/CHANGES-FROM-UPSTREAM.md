@@ -244,9 +244,11 @@ catches its breath. The pose has one more field, `pose.tickle` (0 when not
 tickled, else 0..1 through it, `MUSE_TICKLE_S` = 3 s), which the firmware
 drives.
 
-> **Drawing it is the avatar's job.** The tickle shows only with an avatar
-> that draws it. The default avatar's drawing isn't part of this change: it's
-> in a separate commit that isn't under the Apache License, like #13's.
+> **Jollybot draws it in this fork.** He startles, then squirms and laughs
+> with squeezed eyes, tears of joy and "HA" marks, looping on the clock while
+> you keep tickling, then catches his breath. Like #13's drawings, this is
+> not under the Apache License, and it's in a commit of its own so it can
+> be removed at Meta's request.
 
 - **Where it counts.** On the face tile of a touch board, where the volume
   drag could start: screen awake, no cover, pairing prompt, image or menu up,
