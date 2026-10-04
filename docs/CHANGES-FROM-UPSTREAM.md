@@ -82,7 +82,7 @@ for a reply. It also closes the session after 10 min idle and reopens it only
 on the next press. So messages that Muse sends first, or replies to something
 typed in the app, never reach the gadget.
 
-**Settings › All messages** is a top-level row, under Muse, that shows On/Off; tapping it toggles. With it on:
+**Settings › All messages** is a top-level row under Muse, with a bell icon and an on/off switch. With it on:
 - **Showing them.** An assistant message that arrives with no turn pending
   opens a reply-only turn (`push_begin`). The voice task wakes the screen and
   plays it like any reply (`play_push`), spoken if #4 is on.

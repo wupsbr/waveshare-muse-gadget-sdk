@@ -267,9 +267,12 @@ static lv_obj_t *row(lv_obj_t *list, const char *icon, const char *text, lv_obj_
     return c;
 }
 
-static lv_obj_t *switch_row(lv_obj_t *list, const char *text, bool on, lv_event_cb_t cb)
+static lv_obj_t *switch_row_icon(lv_obj_t *list, const char *icon, const char *text, bool on, lv_event_cb_t cb)
 {
     lv_obj_t *c = card(list, false);
+    if (icon) {
+        label(c, &lv_font_montserrat_20, COLOR_ACCENT, icon);
+    }
     lv_obj_t *t = label(c, &lv_font_montserrat_20, COLOR_TEXT, text);
     lv_obj_set_flex_grow(t, 1);
     lv_obj_t *sw = lv_switch_create(c);
@@ -281,6 +284,11 @@ static lv_obj_t *switch_row(lv_obj_t *list, const char *text, bool on, lv_event_
     }
     lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, NULL);
     return sw;
+}
+
+static lv_obj_t *switch_row(lv_obj_t *list, const char *text, bool on, lv_event_cb_t cb)
+{
+    return switch_row_icon(list, NULL, text, on, cb);
 }
 
 static lv_obj_t *button(lv_obj_t *list, const char *text, uint32_t color, lv_event_cb_t cb, lv_obj_t **label_out)
@@ -1248,13 +1256,11 @@ static const page_t SLEEP = { &s_sleep, build_sleep_page };
 static const page_t BATTERY = { &s_battery, build_battery_page };
 static const page_t POWER = { &s_power, build_power_page };
 
-/* All messages toggles in place: off (the default), only replies to the talk
- * button are played and the connection may close when idle, saving battery. */
-static void on_pushes_row(lv_event_t *e)
+/* Off (the default): only replies to the talk button are played, and the
+ * connection may close when idle, which saves battery. */
+static void on_pushes_sw(lv_event_t *e)
 {
-    (void)e;
-    muse_settings_set_pushes_on(!muse_settings_pushes_on());
-    set_text(s_home_pushes, muse_settings_pushes_on() ? "On" : "Off");
+    muse_settings_set_pushes_on(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
 }
 
 static void build_home(lv_obj_t *tile)
@@ -1263,7 +1269,7 @@ static void build_home(lv_obj_t *tile)
     s_home = page(tile, "SETTINGS", false, &list);
     row(list, LV_SYMBOL_WIFI, "Wi-Fi", &s_home_wifi, on_nav, (void *)&WIFI);
     row(list, LV_SYMBOL_HOME, "Muse", &s_home_hatch, on_nav, (void *)&HATCH);
-    row(list, LV_SYMBOL_BELL, "All messages", &s_home_pushes, on_pushes_row, NULL);
+    s_home_pushes = switch_row_icon(list, LV_SYMBOL_BELL, "All messages", muse_settings_pushes_on(), on_pushes_sw);
     row(list, LV_SYMBOL_BLUETOOTH, "Bluetooth", &s_home_ble, on_nav, (void *)&BLE);
     row(list, LV_SYMBOL_VOLUME_MAX, "Sound", &s_home_sound, on_nav, (void *)&SOUND);
     row(list, LV_SYMBOL_EYE_CLOSE, "Sleep", &s_home_sleep, on_nav, (void *)&SLEEP);
@@ -1293,7 +1299,10 @@ static void tick_home(void)
         set_text(s_home_sound, "Muted");
     }
     set_text(s_home_sleep, sleep_name(muse_settings_sleep_s()));
-    set_text(s_home_pushes, muse_settings_pushes_on() ? "On" : "Off");
+    bool pushes = muse_settings_pushes_on();
+    if (pushes != lv_obj_has_state(s_home_pushes, LV_STATE_CHECKED)) {
+        lv_obj_set_state(s_home_pushes, LV_STATE_CHECKED, pushes);
+    }
 
     muse_power_t p = muse_state_power();
     char buf[96];
