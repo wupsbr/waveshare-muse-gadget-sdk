@@ -35,9 +35,11 @@
 #include "muse_board.h"
 #include "muse_chat.h"
 #include "muse_console.h"
+#include "muse_imu.h"
 #include "muse_link.h"
 #include "muse_mem.h"
 #include "muse_menu.h"
+#include "muse_pixel.h"
 #include "muse_settings.h"
 #include "muse_state.h"
 #include "muse_ui.h"
@@ -62,6 +64,7 @@ static const char *TAG = "muse_input";
 #define HINT_TICKS 60          /* 0.6 s: warn that holding powers off */
 #define LONG_TICKS 150         /* 1.5 s: power off */
 #define SLEEP_CHECK_MS 100
+#define DIZZY_COOLDOWN_MS 6000 /* from one shake reaction to the next */
 
 #define SERIAL_RX 1024         /* the driver drops what doesn't fit, so a console line must */
 #define SERIAL_LINE 1024
@@ -292,22 +295,103 @@ static void keyboard_buttons(unsigned ev)
     else if (ev & MUSE_BTN_ENTER) muse_menu_key(MUSE_MENU_SELECT);
 }
 
-/* A pairing prompt wakes the screen and keeps it on; otherwise idle sleeps. */
-static void check_sleep(void)
+/* While drowsing, snores start this far through (muse_state_sleepy()). */
+static const float SNORE_AT[] = { 0.6f, 0.8f };
+
+static bool pairing_prompt(void)
 {
     muse_ble_status_t ble;
     muse_ble_status(&ble);
-    bool prompt = ble.passkey || muse_link_state() == MUSE_LINK_CONFIRM;
-    if (prompt) {
+    return ble.passkey || muse_link_state() == MUSE_LINK_CONFIRM;
+}
+
+/*
+ * A pairing prompt wakes the screen and keeps it on; otherwise idle sleeps.
+ * The last MUSE_SLEEPY_S before that Muse drowses (the avatar nods off, with
+ * a snore or two) and only then does the screen go dark. Anything that pokes
+ * meanwhile wakes Muse back up (muse_state.h).
+ */
+static void check_sleep(void)
+{
+    static bool drowsing;
+    static int snores;
+    if (pairing_prompt()) {
+        muse_state_end_drowsing();
         set_asleep(false, "pairing");
         return;
     }
+    if (muse_state_asleep()) {
+        drowsing = false;
+        return;
+    }
+    float sleepy = muse_state_sleepy();
+    if (drowsing && sleepy == 0) {
+        ESP_LOGI(TAG, "drowsing interrupted");
+        drowsing = false;
+    }
     int after = muse_settings_sleep_s();
     float mode_t;
-    if (after && !muse_state_asleep() && muse_state_mode(&mode_t) == MUSE_MODE_IDLE
-        && muse_state_idle_secs() > after) {
+    if (!after || muse_state_mode(&mode_t) != MUSE_MODE_IDLE) {
+        if (sleepy > 0) {
+            muse_state_end_drowsing();
+        }
+        drowsing = false;
+        return;
+    }
+    if (!drowsing) {
+        float drowse_after = after > MUSE_SLEEPY_S ? after - MUSE_SLEEPY_S : 0;
+        if (muse_state_start_drowsing(drowse_after)) {
+            ESP_LOGI(TAG, "drowsing: sleeping in %.0f s", (double)MUSE_SLEEPY_S);
+            drowsing = true;
+            snores = 0;
+        }
+        return;
+    }
+    if (snores < (int)(sizeof(SNORE_AT) / sizeof(SNORE_AT[0])) && sleepy >= SNORE_AT[snores]) {
+        snores++;
+        if (muse_settings_speaker_on()) {
+            ESP_LOGI(TAG, "snore %d", snores);
+            muse_voice_request_snore();
+        }
+    }
+    if (sleepy >= 1) {
+        drowsing = false;
         set_asleep(true, "auto-sleep");
     }
+}
+
+/*
+ * Shaken: asleep, it only wakes the screen, as a tap does. Awake and idle,
+ * with nothing over the face that matters more (the menu, a pairing prompt),
+ * Muse gets dizzy. The IMU is read every MUSE_IMU_POLL_MS, not while the
+ * display is paused (on battery, asleep), when this task barely runs.
+ */
+static void check_shake(TickType_t now)
+{
+    static TickType_t dizzy_at;
+    static bool dizzied;
+    if (!muse_imu_poll_shake()) {
+        return;
+    }
+    if (muse_state_asleep()) {
+        set_asleep(false, "shake");
+        return;
+    }
+    float mode_t;
+    const char *busy = muse_state_mode(&mode_t) != MUSE_MODE_IDLE ? "busy"
+                       : muse_menu_is_open()                       ? "menu open"
+                       : pairing_prompt()                          ? "pairing"
+                       : dizzied && now - dizzy_at < pdMS_TO_TICKS(DIZZY_COOLDOWN_MS) ? "still dizzy"
+                                                                                        : NULL;
+    if (busy) {
+        ESP_LOGI(TAG, "shaken, no reaction (%s)", busy);
+        muse_state_poke();
+        return;
+    }
+    ESP_LOGI(TAG, "shaken: dizzy");
+    dizzied = true;
+    dizzy_at = now;
+    muse_state_start_dizzy();
 }
 
 static void set_cpu_low(bool low)
@@ -396,6 +480,7 @@ static void input_task(void *arg)
     bool paused = false;
     TickType_t checked = xTaskGetTickCount() - pdMS_TO_TICKS(SLEEP_CHECK_MS);
     TickType_t powered = xTaskGetTickCount() - pdMS_TO_TICKS(POWER_MS);
+    TickType_t shook = xTaskGetTickCount();
 
     for (;;) {
         unsigned ev = muse_board->poll_buttons();
@@ -438,6 +523,10 @@ static void input_task(void *arg)
         if (now - checked >= pdMS_TO_TICKS(SLEEP_CHECK_MS)) {
             checked = now;
             check_sleep();
+        }
+        if (!paused && now - shook >= pdMS_TO_TICKS(MUSE_IMU_POLL_MS)) {
+            shook = now;
+            check_shake(now);
         }
 
         if (now - powered >= pdMS_TO_TICKS(paused ? REST_POWER_MS : POWER_MS)) {

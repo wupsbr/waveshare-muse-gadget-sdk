@@ -135,6 +135,11 @@ BOOT 5 s resets setup.
 - **Touch volume:** `muse_ui.c` `volume_drag`.
   - A vertical drag on the face tile; horizontal stays the settings swipe.
   - The level is saved on release.
+- **Avatar reactions:** `muse_pose_t`'s `dizzy`, `sleepy` and `waking` (`muse_pixel.h`), timed in `muse_state.c`.
+  - Dizzy: shaking. `muse_imu.c` (QMI8658, probed at 0x6B/0x6A from each board's `init()`) feeds `muse_input.c` `check_shake`.
+  - Sleepy: `check_sleep` drowses for `MUSE_SLEEPY_S` before auto-sleep, and plays two soft snores (`muse_voice_request_snore`).
+  - Waking: plays when the screen wakes, or when drowsing is interrupted.
+  - The default Jollybot (`avatar/`) ignores these fields. Only a custom `components/muse/avatar/muse_pixel.c` draws them.
 - **Battery:** each board's `read_power`.
   - The 1.85C infers USB from voltage trends, because it has no VBUS or charge pin.
   - Errs toward `usb = true`: on battery the firmware dozes Wi-Fi and closes idle sessions.

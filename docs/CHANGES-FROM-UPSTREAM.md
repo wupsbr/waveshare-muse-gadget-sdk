@@ -22,6 +22,7 @@ The Linux SDK (`linux/`) and the skills (`skills/`) are unchanged.
 | 10 | Cross-signed TLS chains | Fix for #4 | On (these boards) | the three overlays |
 | 11 | Secrets outside git | Tooling | — | `secrets/`, `tools/muse/secrets.py`, `tools/muse/board.sh`, `.gitignore` |
 | 12 | Claude Code support | Tooling | — | `CLAUDE.md`, `.claude/skills/flash-muse-board/` |
+| 13 | Avatar reactions: dizzy when shaken, sleepy with a snore, waking | Feature | On (shake: boards with a QMI8658) | `muse_imu.*`, `muse_state.*`, `muse_input.c`, `muse_voice.*`, `muse_ui.c`, `muse_pixel.h`, the three board files |
 
 ## 1–3. Three Waveshare boards with the full UI
 
@@ -175,9 +176,60 @@ that uses `muse_lcd_bands`.
 - **The `flash-muse-board` skill** goes from a plugged-in board to a verified
   boot.
 
+## 13. Avatar reactions: dizzy, sleepy, waking
+
+The avatar's pose (`muse_pixel.h`, `muse_pose_t`) has three more fields, each
+0 when nothing is happening, else 0..1 through the reaction. The firmware
+drives them; drawing them is the avatar's job.
+
+> **The default avatar ignores them.** Meta's Jollybot in `avatar/` doesn't
+> read the new fields, so with it nothing changes on screen. The reactions
+> show only with an avatar that draws them: your own
+> `components/muse/avatar/muse_pixel.c` (gitignored; see
+> `tools/muse/AVATAR_RECIPE.md`). The snore and the timing work regardless.
+
+- **Dizzy (`pose.dizzy`, 4 s): shake Muse.**
+  - `muse_imu.c` is a small QMI8658 driver: it probes I2C 0x6B then 0x6A,
+    checks `WHO_AM_I` (0x05), and runs the accelerometer alone at ±8 g,
+    125 Hz. Without the chip it logs once and does nothing.
+  - The input task reads it every 20 ms, while the display isn't paused. It
+    takes gravity out with a slow low-pass and counts **swings** of more than
+    1.2 g. A shake is 3 swings, each the other way from the last, within
+    0.7 s. A tap, a bump or picking Muse up is one swing in one direction, so
+    it doesn't count. After a shake the detector holds off 1.5 s.
+  - Awake and idle, with no menu or pairing prompt up, a shake starts the
+    dizzy reaction (then a 6 s cooldown) and keeps the screen awake. Asleep,
+    it just wakes the screen, like a tap.
+  - The i2c_master driver serializes each bus, so this shares it safely with
+    touch (read from LVGL's task), the PMU and the codecs.
+  - The three Waveshare boards call `muse_imu_init()` at the end of their
+    `init()`. Waveshare lists a QMI8658 on the 1.8. The 1.85C's label lists
+    one, but its schematic doesn't, so the probe decides. The 1.43C probably
+    has none.
+- **Sleepy (`pose.sleepy`, 4 s): before the screen goes dark.**
+  - Auto-sleep no longer goes straight to dark. 4 s before the idle timeout,
+    Muse starts **drowsing**. `pose.sleepy` climbs from 0 to 1, and at 1 the
+    screen sleeps as before.
+  - Any activity ends drowsing: a touch, a button, anything that calls
+    `muse_state_poke()`, a mode change or a pairing prompt. If it was more
+    than 0.3 s in, Muse plays the waking reaction.
+  - The serial `z` key and the menu's sleep still go dark at once.
+- **Snore.** At 60% and 80% of the way through drowsing, the voice task
+  plays a soft synthesized snore, about 0.8 s each: a 62–90 Hz fluttering
+  rumble with harmonics over low-passed noise on the inhale, then a breath
+  out. It plays about 16 dB below the chirp, at your volume, and only if
+  Speaker is on. It's only played while the voice task is idle, and a press
+  or the drowsing ending cuts it short, so it never delays a recording.
+- **Waking (`pose.waking`, 1.5 s).** It plays when the screen comes back on,
+  whatever woke it, and when drowsing is interrupted.
+- **Rules.** Dizzy and waking show only while Muse is idle. Pairing prompts,
+  images, the menu and the volume drag work as before: the reactions only
+  feed the avatar's pose.
+
 ## Not changed
 
 - The pairing protocol, the Noise session, the home-network tunnel and OTA.
-- Every other board. The only exception is #8, which applies to every board
-  that uses `muse_lcd_bands`.
+- Every other board, with two exceptions. #8 applies to every board that uses
+  `muse_lcd_bands`. #13's drowsing, snore and waking apply to every board with
+  the full UI, but a board only reacts to shakes if it calls `muse_imu_init()`.
 - `linux/` and `skills/`.

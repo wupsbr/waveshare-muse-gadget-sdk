@@ -38,7 +38,16 @@ typedef struct {
     float mode_t;    /* seconds in current mode */
     float level;     /* 0..1 live audio level */
     float happy;     /* 0..1 pet reaction */
+    /* Reactions, each 0 when not happening, else 0..1 through it. An avatar
+     * that ignores them still renders; the default one does. */
+    float dizzy;     /* shaken: wobble with spiral eyes and stars, sit dazed, stand back up (MUSE_DIZZY_S) */
+    float sleepy;    /* before the screen goes dark: yawn, eyes droop and close, snore Zzz (MUSE_SLEEPY_S) */
+    float waking;    /* the screen came on: quick blinks, a stretch, alert (MUSE_WAKING_S) */
 } muse_pose_t;
+
+#define MUSE_DIZZY_S 4.0f
+#define MUSE_SLEEPY_S 4.0f
+#define MUSE_WAKING_S 1.5f
 
 /* Accent colour of a mode (for the surrounding UI), as 0xRRGGBB. */
 uint32_t muse_pixel_accent(muse_mode_t mode);

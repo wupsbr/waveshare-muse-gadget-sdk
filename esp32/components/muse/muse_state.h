@@ -92,3 +92,26 @@ void muse_state_nudge(void);
 /* Touch/pet reaction. */
 void muse_state_make_happy(void);
 float muse_state_happiness(void);
+
+/*
+ * Reactions for the avatar's pose (muse_pixel.h): each 0 when not happening,
+ * else 0..1 through it. Dizzy and waking show only while idle.
+ *
+ * Dizzy: shaken (MUSE_DIZZY_S). Starting it pokes and ends drowsing quietly.
+ */
+void muse_state_start_dizzy(void);
+float muse_state_dizzy(void);
+
+/*
+ * Drowsing: the MUSE_SLEEPY_S before auto-sleep, when muse_state_sleepy()
+ * climbs to 1 and muse_input then puts the screen to sleep. It starts only if
+ * nothing has poked for idle_s (true if it did, or already had). A poke, a
+ * mode change or muse_state_end_drowsing() ends it; past DROWSE_WAKE_S in,
+ * plays the waking reaction. Sleeping ends it too, quietly.
+ */
+bool muse_state_start_drowsing(float idle_s);
+void muse_state_end_drowsing(void);
+float muse_state_sleepy(void);
+
+/* Waking: the screen came on (MUSE_WAKING_S), or drowsing was interrupted. */
+float muse_state_waking(void);

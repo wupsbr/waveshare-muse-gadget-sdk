@@ -51,6 +51,7 @@
 
 #include "muse_audio.h"
 #include "muse_board.h"
+#include "muse_imu.h"
 #include "muse_lcd_bands.h"
 #include "muse_mem.h"
 #include "muse_pmu.h"
@@ -178,14 +179,17 @@ static esp_err_t init(void)
     esp_err_t err = muse_pmu_init(s_i2c, true);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "PMU unavailable (%s): PWR button and battery unavailable", esp_err_to_name(err));
-        return ESP_OK;
+    } else {
+        /* DCDC1 (3V3) and ALDO1 (the mic) are all the board uses; xiaozhi's
+         * board turns the rest off too. */
+        err = muse_pmu_keep_rails(BIT(0), BIT(0));
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "unused rails left on (%s)", esp_err_to_name(err));
+        }
     }
-    /* DCDC1 (3V3) and ALDO1 (the mic) are all the board uses; xiaozhi's board
-     * turns the rest off too. */
-    err = muse_pmu_keep_rails(BIT(0), BIT(0));
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "unused rails left on (%s)", esp_err_to_name(err));
-    }
+
+    /* Waveshare's docs and 92_qmi8658_imu example put a QMI8658 on this bus. */
+    muse_imu_init(s_i2c);
     return ESP_OK;
 }
 

@@ -54,6 +54,7 @@
 #include "muse_audio.h"
 #include "muse_board.h"
 #include "muse_console.h"
+#include "muse_imu.h"
 #include "muse_lcd_bands.h"
 #include "muse_mem.h"
 
@@ -187,6 +188,9 @@ static esp_err_t init(void)
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
 
     batt_init();
+
+    /* Not on Waveshare's list for this board; the probe costs nothing. */
+    muse_imu_init(s_i2c);
     return ESP_OK;
 }
 

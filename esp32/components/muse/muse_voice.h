@@ -38,6 +38,11 @@ float muse_voice_monitor_db(void);
 /* Plays a short chirp at the current volume (when idle). */
 void muse_voice_request_chirp(void);
 
+/* Plays one soft snore (drowsing, muse_input.c), well under the current
+ * volume, if the speaker is on and the voice task is idle within a moment;
+ * a press or the drowsing ending cuts it short. */
+void muse_voice_request_snore(void);
+
 /* Runs muse_audio_loopback_test() at the current volume (when idle); results go to the log. */
 void muse_voice_request_loopback(void);
 

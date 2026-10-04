@@ -29,8 +29,9 @@
  * two-button menu instead (muse_menu.h), where talk selects. Either button
  * wakes from sleep; the talk button's press is also posted, marked `wake`, so
  * holding it on through waking records a note. Waking also retries Wi-Fi at
- * once if it's down. Also runs auto-sleep and refreshes battery status into
- * muse_state.
+ * once if it's down. Also runs auto-sleep (drowsing first, with a snore),
+ * reacts to being shaken on boards with an IMU (muse_imu.h) and refreshes
+ * battery status into muse_state.
  */
 
 typedef enum {

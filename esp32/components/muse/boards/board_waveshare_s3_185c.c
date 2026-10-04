@@ -57,6 +57,7 @@
 #include "muse_audio.h"
 #include "muse_board.h"
 #include "muse_console.h"
+#include "muse_imu.h"
 #include "muse_lcd_bands.h"
 #include "muse_mem.h"
 
@@ -232,6 +233,10 @@ static esp_err_t init(void)
     s_talk.pressed = gpio_get_level(TALK_GPIO) == 0;
 
     batt_init();
+
+    /* The label lists a QMI8658, but the V2 schematic doesn't show one: the
+     * probe settles it. */
+    muse_imu_init(s_i2c);
     return ESP_OK;
 }
 
