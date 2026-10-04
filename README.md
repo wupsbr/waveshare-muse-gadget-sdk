@@ -2,6 +2,12 @@
 
 **Meta's [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk), running on three round and square Waveshare ESP32-S3 boards — and talking back out loud.**
 
+<p align="center">
+  <img src="docs/images/waveshare-muse-boards.jpg" width="820" alt="Three Waveshare ESP32-S3 boards running Muse next to a MacBook: the ESP32-S3-Touch-LCD-1.85C in its round speaker enclosure at the back, the round ESP32-S3-Touch-AMOLED-1.43C in front, and the square ESP32-S3-Touch-AMOLED-1.8 on the right asking to set up Wi-Fi">
+  <br>
+  <sub>Muse on all three: the <b>LCD 1.85C</b> in its speaker enclosure (back), the round <b>AMOLED 1.43C</b> (front) and the <b>AMOLED 1.8</b> waiting for Wi-Fi (right).</sub>
+</p>
+
 This is a fork of `facebookincubator/muse-gadget-sdk` that adds three Waveshare boards to the ESP32 Device SDK, plus a few features the upstream firmware doesn't have yet: spoken replies, replies you didn't ask for (pushes), touch volume and battery level on boards without a power chip.
 
 | | Waveshare ESP32-S3-Touch-LCD-1.85C | Waveshare ESP32-S3-Touch-AMOLED-1.43C | Waveshare ESP32-S3-Touch-AMOLED-1.8 |
