@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Build or flash Home Link for one board:
-#   tools/muse/board.sh build|flash <s3|s3n|aipi|box3|c6|watcher|sticks3|plus2|cardputer-adv|stopwatch|cores3> [serial|port]
+#   tools/muse/board.sh build|flash <s3|s3n|aipi|box3|c6|watcher|sticks3|plus2|cardputer-adv|stopwatch|cores3|s185c|s143c|s18> [serial|port]
 # Build log: /tmp/muse_build_<board>.log. flash finds the board's port by its
 # USB device (tools/muse/ports.py); with several of a kind attached, pass the
 # one's USB serial number (the MAC on native USB) or its port. Flashing from a
@@ -23,7 +23,7 @@
 # flashes in build-muse-<profile>-bench/, so neither build's sdkconfig hides
 # the other's.
 set -uo pipefail
-cmd=${1:?build|flash}; board=${2:?s3|s3n|aipi|box3|c6|watcher|sticks3|plus2|cardputer-adv|stopwatch|cores3}
+cmd=${1:?build|flash}; board=${2:?s3|s3n|aipi|box3|c6|watcher|sticks3|plus2|cardputer-adv|stopwatch|cores3|s185c|s143c|s18}
 root=$(cd "$(dirname "$0")/../.." && pwd)
 case $board in
     s3)      profile=waveshare-s3-175c;    target=esp32s3 ;;
@@ -37,6 +37,9 @@ case $board in
     cardputer-adv) profile=m5stack-cardputer-adv; target=esp32s3 ;;
     sticks3) profile=m5stack-sticks3;      target=esp32s3 ;;
     stopwatch) profile=m5stack-stopwatch;  target=esp32s3 ;;
+    s185c)     profile=waveshare-s3-185c;  target=esp32s3 ;;
+    s143c)     profile=waveshare-s3-143c;  target=esp32s3 ;;
+    s18)       profile=waveshare-s3-18;    target=esp32s3 ;;
     cores3)  profile=m5stack-cores3;       target=esp32s3 ;;
     # Its CH9102 USB-UART bridge drops out above 230400 baud.
     plus2)   profile=m5stack-stickc-plus2; target=esp32; baud=230400 ;;
@@ -66,6 +69,8 @@ if [ "$cmd" = build ]; then
     # can recreate files mid-delete, so retry.
     clean() { for _ in 1 2 3; do rm -rf managed_components dependencies.lock 2>/dev/null && return; sleep 1; done; }
     clean
+    # The SDK token and API keys, from secrets/ or the environment (never git).
+    python3 "$root/tools/muse/secrets.py" "$B/sdkconfig" || exit 1
     idf.py -B $B -DIDF_TARGET=$target -DSDKCONFIG=$B/sdkconfig \
         -DSDKCONFIG_DEFAULTS="$defaults" \
         build > $log 2>&1; rc=$?

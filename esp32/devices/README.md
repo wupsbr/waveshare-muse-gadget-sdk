@@ -37,6 +37,9 @@ session to Muse. The rest depends on the hardware.
 | **Home Assistant Voice Preview Edition** | ESP32-S3 | None (12-LED ring) | 16 MB / 8 MB | [ESPHome repo](https://github.com/esphome/home-assistant-voice-pe) | [Home Assistant](https://www.home-assistant.io/voice-pe/) |
 | **Waveshare ESP32-S3-Touch-AMOLED-1.75C** | ESP32-S3 | 1.75" 466×466 round AMOLED, touch | 32 MB / 8 MB | [Waveshare wiki](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-1.75C), [GitHub](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75C) | [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm) |
 | **Waveshare ESP32-S3-Touch-AMOLED-1.75** | ESP32-S3 | 1.75" 466×466 round AMOLED, touch | 16 MB / 8 MB | [Waveshare wiki](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-1.75), [GitHub](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75) | [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm) |
+| **Waveshare ESP32-S3-Touch-LCD-1.85C (experimental)** | ESP32-S3 | 1.85" 360×360 round LCD, touch | 16 MB / 8 MB | [GitHub](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.85C) | — |
+| **Waveshare ESP32-S3-Touch-AMOLED-1.43C (experimental)** | ESP32-S3 (PICO-1-N8R8) | 1.43" 466×466 round AMOLED, touch | 8 MB / 8 MB | [GitHub](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.43C) | — |
+| **Waveshare ESP32-S3-Touch-AMOLED-1.8 (experimental)** | ESP32-S3 | 1.8" 368×448 AMOLED, touch | 16 MB / 8 MB | [GitHub](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.8) | — |
 | **Espressif ESP32-S3-BOX-3** | ESP32-S3 | 2.4" 320×240 LCD, touch | 16 MB / 16 MB | [Espressif BSP](https://github.com/espressif/esp-bsp/tree/master/bsp/esp-box-3), [ESP-BOX](https://github.com/espressif/esp-box) | — |
 | **AIPI Lite** | ESP32-S3 | 128×128 LCD | 16 MB / 8 MB | [xiaozhi-esp32 board](https://github.com/78/xiaozhi-esp32/tree/main/main/boards/xorigin/aipi-lite) | [AliExpress](https://www.aliexpress.com/w/wholesale-aipi-lite.html) |
 | **Waveshare ESP32-C6-Touch-AMOLED-1.8** | ESP32-C6 | 1.8" 368×448 AMOLED, touch | 16 MB / none | [Waveshare wiki](https://docs.waveshare.com/ESP32-C6-Touch-AMOLED-1.8) | [Waveshare](https://www.waveshare.com/esp32-c6-touch-amoled-1.8.htm) |
@@ -49,19 +52,19 @@ session to Muse. The rest depends on the hardware.
 
 ## Features
 
-| | DevKitC-1 | ideaspark | SenseCAP Indicator | reTerminal E1001 | reTerminal E1002 | HA Voice PE | Waveshare S3 1.75C | Waveshare S3 1.75 | AIPI Lite | Waveshare C6 1.8 | Watcher | StickS3 | StickC Plus2 | Cardputer ADV | BOX-3 | StopWatch | CoreS3 |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:| :-: | :-: |:-:|:-:|
-| Home-network tunnel | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| Shows status on | Light | Screen | Screen | E-paper | E-paper | Light ring | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar |
-| Images from Muse | — | ✅ | ✅ | Black and white | Six colours | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| UI and settings | — | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Experimental | ✅ | ✅ | ✅ |
-| Push-to-talk | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | Text replies | ✅ | ✅ | ✅ | Text replies (experimental) | ✅ | ✅ | ✅ |
-| Speaker and mic | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Buzzer and mic | ES8311 (experimental) | ✅ | ✅ | ✅ |
-| Air sensors | — | — | D1S, D1Pro | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| Touch | — | — | — | — | — | — | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ |
-| Battery status | — | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Voltage only | — | — | ✅ | ✅ |
-| Over-the-air updates | Off | Off | Off | Off | Off | Off | On | On | On | On | On | On | On | Off | On | On | On |
-| Buttons | BOOT | BOOT | Top | Green | Green | Centre (talk), dial | PWR (talk), BOOT | BOOT (talk), PWR | Two | BOOT (talk), PWR | Wheel (press to talk, turn to sleep) | Front (talk), side (menu), PWR | Front (talk), side (menu), PWR | GO/Space (talk), Esc/Enter/arrows (menu) | BOOT/CONFIG (talk) | Yellow (talk), blue (sleep), PWR | PWR (talk), RST |
+| | DevKitC-1 | ideaspark | SenseCAP Indicator | reTerminal E1001 | reTerminal E1002 | HA Voice PE | Waveshare S3 1.75C | Waveshare S3 1.75 | Waveshare S3 1.85C | Waveshare S3 1.43C | Waveshare S3 1.8 | AIPI Lite | Waveshare C6 1.8 | Watcher | StickS3 | StickC Plus2 | Cardputer ADV | BOX-3 | StopWatch | CoreS3 |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:| :-: | :-: |:-:|:-:|
+| Home-network tunnel | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+| Shows status on | Light | Screen | Screen | E-paper | E-paper | Light ring | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar |
+| Images from Muse | — | ✅ | ✅ | Black and white | Six colours | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+| UI and settings | — | — | — | — | — | — | ✅ | ✅ | Experimental | Experimental | Experimental | ✅ | ✅ | ✅ | ✅ | ✅ | Experimental | ✅ | ✅ | ✅ |
+| Push-to-talk | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Text replies | ✅ | ✅ | ✅ | Text replies (experimental) | ✅ | ✅ | ✅ |
+| Speaker and mic | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Buzzer and mic | ES8311 (experimental) | ✅ | ✅ | ✅ |
+| Air sensors | — | — | D1S, D1Pro | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Touch | — | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ |
+| Battery status | — | — | — | — | — | — | ✅ | ✅ | Voltage only | Voltage and charging | ✅ | ✅ | ✅ | ✅ | ✅ | Voltage only | — | — | ✅ | ✅ |
+| Over-the-air updates | Off | Off | Off | Off | Off | Off | On | On | On | On | On | On | On | On | On | On | Off | On | On | On |
+| Buttons | BOOT | BOOT | Top | Green | Green | Centre (talk), dial | PWR (talk), BOOT | BOOT (talk), PWR | BOOT (talk), RST | BOOT (talk), PWR (power latch) | BOOT (talk), PWR | Two | BOOT (talk), PWR | Wheel (press to talk, turn to sleep) | Front (talk), side (menu), PWR | Front (talk), side (menu), PWR | GO/Space (talk), Esc/Enter/arrows (menu) | BOOT/CONFIG (talk) | Yellow (talk), blue (sleep), PWR | PWR (talk), RST |
 
 Boards without PSRAM (the ideaspark, Waveshare C6 and Cardputer ADV) don't have room for
 the home-network tunnel. Muse can still reach and control them once the
@@ -163,6 +166,57 @@ and M5's [factory firmware](https://github.com/m5stack/M5StopWatch-UserDemo)
 are the references. It enumerates as the chip's own USB serial port, so
 flashing needs nothing special: `tools/muse/board.sh flash stopwatch`.
 
+The Waveshare ESP32-S3-Touch-LCD-1.85C port is experimental: it is built from
+Waveshare's examples and hasn't been run on the board yet. Its round 360×360
+ST77916 LCD runs on QSPI with a PWM backlight, with CST816 touch, an ES8311
+speaker codec and an ES7210 with two mics. A TCA9554 expander resets the touch
+(EXIO1) and the panel (EXIO2). The panel comes in two revisions: Muse reads
+its register 0x04 and sends Waveshare's init sequence unless it reads like the
+older panel (`00 7f 7f 7f`; the newer one reads `00 02 7f 7f`). BOOT is
+push-to-talk and pairing confirmation, and settings are on the touch screen.
+RST restarts the chip, and the slide switch cuts the battery. There's no power
+chip: Muse reads the battery's voltage on GPIO8, but nothing tells it about
+USB, so it counts as on USB until the voltage falls (or while a computer reads
+the port), and as charging once it rises. Powering off from Muse turns off
+the screen, touch and amp and puts the ESP32-S3 in deep sleep; BOOT wakes it.
+The RTC and SD card aren't used yet. Waveshare's
+[examples](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.85C) (the
+Arduino `01_lvgl_example`, the ESP-IDF test and the V2 schematic) are the
+references. It enumerates as the chip's own USB serial port:
+`tools/muse/board.sh flash s185c`.
+
+The Waveshare ESP32-S3-Touch-AMOLED-1.43C port is experimental. Its round
+466×466 SH8601 AMOLED runs on QSPI and is mounted upside down, so Muse sets
+MADCTL to 0xC0 and flips touch on both axes; the panel's columns start 8
+pixels in. Touch is a controller at 0x15 with FocalTech-style registers. An
+ES8311 drives the speaker through an NS4150B amp (enabled on GPIO46), and an
+ES7210 takes the mics; GPIO18 enables the audio LDO. There's no power chip or
+IO expander: Muse reads the battery on GPIO4 (through a ×2 divider) and the
+ETA6098 charger's status on GPIO7 (low while charging). BOOT is push-to-talk
+and pairing confirmation, and settings are on the touch screen. PWR only
+drives a power latch and can't be read. The ESP32-S3-PICO-1-N8R8 has 8 MB of
+flash, so the board uses `partitions_muse_8mb.csv`. Waveshare's
+[examples](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.43C)
+(`arduino_v3.3.0`) and schematic are the references. It enumerates as the
+chip's own USB serial port: `tools/muse/board.sh flash s143c`.
+
+The Waveshare ESP32-S3-Touch-AMOLED-1.8 port is experimental. Its 368×448
+AMOLED runs on QSPI, with one ES8311 for the speaker and the mic, an AXP2101
+power chip and a TCA9554 expander that powers the panel and resets the panel
+and touch. The board comes in two revisions, which Muse tells apart by the
+touch controller, as Waveshare's examples do: the original has an SH8601 panel
+with FT3168 touch, V2 a CO5300 panel with CST816 touch. Muse drives both
+itself, with Waveshare's init sequences from its
+`waveshare/esp32_s3_touch_amoled_1_8` BSP (1.1.4 for the original, 2.0.3 for
+V2). BOOT is push-to-talk and pairing confirmation, and settings are on the
+touch screen. PWR reaches the ESP32-S3 only through the AXP2101, which latches
+its presses; held for 10 s, it makes the power chip cut power. Muse reads the
+battery from the AXP2101 and powers off through it. The IMU, RTC and SD card
+aren't used yet. Waveshare's
+[repo](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.8) and
+xiaozhi-esp32's `esp32-s3-touch-amoled-1.8` boards are the references. It
+enumerates as the chip's own USB serial port: `tools/muse/board.sh flash s18`.
+
 The M5Stack CoreS3 runs on Espressif's
 [BSP](https://github.com/espressif/esp-bsp/tree/master/bsp/m5stack_core_s3),
 which brings up its ILI9342C LCD, FT6336U touch, AW88298 amp and ES7210
@@ -260,6 +314,9 @@ board's overlays, in order:
 | Home Assistant Voice PE | `esp32s3` | [`devices/sdkconfig.home-assistant-voice`](sdkconfig.home-assistant-voice) | `tools/board.sh home-assistant-voice build` |
 | Waveshare S3 1.75C | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-s3-175c`](sdkconfig.muse-waveshare-s3-175c) | by hand |
 | Waveshare S3 1.75 | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-s3-175`](sdkconfig.muse-waveshare-s3-175) | by hand |
+| Waveshare S3 1.85C (experimental) | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-s3-185c`](sdkconfig.muse-waveshare-s3-185c) | `tools/muse/board.sh build s185c` |
+| Waveshare S3 1.43C (experimental) | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-s3-143c`](sdkconfig.muse-waveshare-s3-143c) | `tools/muse/board.sh build s143c` |
+| Waveshare S3 1.8 (experimental) | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-s3-18`](sdkconfig.muse-waveshare-s3-18) | `tools/muse/board.sh build s18` |
 | Espressif ESP32-S3-BOX-3 | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-espressif-box-3`](sdkconfig.muse-espressif-box-3) | `tools/muse/board.sh build box3` |
 | AIPI Lite | `esp32s3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-aipi`](sdkconfig.muse-aipi) | by hand |
 | Waveshare C6 1.8 | `esp32c6` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-waveshare-c6-18`](sdkconfig.muse-waveshare-c6-18) | by hand |

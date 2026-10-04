@@ -68,9 +68,12 @@ BOARDS = {
     "M5Stack Cardputer ADV": "cardputer-adv",
     "M5Stack StickC Plus2": "plus2",
     "M5Stack StopWatch": "stopwatch",
+    "Waveshare ESP32-S3-Touch-LCD-1.85C": "s185c",
+    "Waveshare ESP32-S3-Touch-AMOLED-1.43C": "s143c",
+    "Waveshare ESP32-S3-Touch-AMOLED-1.8": "s18",
     "M5Stack CoreS3": "cores3",
 }
-CHAT_BOARDS = ("s3", "s3n", "aipi", "box3", "sticks3", "watcher", "stopwatch", "cores3")
+CHAT_BOARDS = ("s3", "s3n", "aipi", "box3", "sticks3", "watcher", "stopwatch", "cores3", "s185c", "s143c", "s18")
 
 
 class Stop(Exception):

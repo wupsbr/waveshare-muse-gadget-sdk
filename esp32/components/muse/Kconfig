@@ -70,6 +70,18 @@ menu "Muse"
         config MUSE_BOARD_M5STACK_CORES3
             bool "M5Stack CoreS3 (ESP32-S3, 320x240 touch LCD, speaker and microphones)"
             depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_WAVESHARE_S3_185C
+            bool "Waveshare ESP32-S3-Touch-LCD-1.85C (round 360x360 touch LCD, one button)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_WAVESHARE_S3_143C
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.43C (round 466x466 touch AMOLED, one button)"
+            depends on IDF_TARGET_ESP32S3
+
+        config MUSE_BOARD_WAVESHARE_S3_18
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.8 (368x448 touch AMOLED, two buttons)"
+            depends on IDF_TARGET_ESP32S3
     endchoice
 
     config MUSE_ENABLED
@@ -91,6 +103,9 @@ menu "Muse"
         default "m5stack_cardputer_adv" if MUSE_BOARD_M5STACK_CARDPUTER_ADV
         default "m5stack_stopwatch" if MUSE_BOARD_M5STACK_STOPWATCH
         default "m5stack_cores3" if MUSE_BOARD_M5STACK_CORES3
+        default "waveshare_s3_185c" if MUSE_BOARD_WAVESHARE_S3_185C
+        default "waveshare_s3_143c" if MUSE_BOARD_WAVESHARE_S3_143C
+        default "waveshare_s3_18" if MUSE_BOARD_WAVESHARE_S3_18
         default "none"
 
     # The Muse tools' serial port: the console UART behind the board's USB
@@ -128,5 +143,32 @@ menu "Muse"
             muse_chat_session.cpp is where a TTS API of your own can speak
             them. Needs PSRAM. Without it, voice notes go over Home Link's own
             session to its paired VM and replies are shown as text.
+
+    config MUSE_ELEVENLABS_API_KEY
+        string "ElevenLabs API key for spoken replies"
+        depends on MUSE_HATCH
+        default ""
+        help
+            With a key, start_tts sends each reply's text to ElevenLabs'
+            streaming text-to-speech and plays the MP3 it returns, captions
+            following the speech. The key needs the Text to Speech
+            permission. Empty: replies stay text. Like the SDK token, the key
+            ships inside the firmware: never commit a generated sdkconfig.
+
+    config MUSE_ELEVENLABS_VOICE_ID
+        string "ElevenLabs voice ID"
+        depends on MUSE_HATCH
+        default "EXAVITQu4vr4xnSDxMaL"
+        help
+            Any voice in the account's library. The default is the premade
+            "Sarah".
+
+    config MUSE_ELEVENLABS_MODEL
+        string "ElevenLabs model"
+        depends on MUSE_HATCH
+        default "eleven_flash_v2_5"
+        help
+            eleven_flash_v2_5 answers fastest and speaks 32 languages;
+            eleven_multilingual_v2 sounds richer but starts later.
 
 endmenu

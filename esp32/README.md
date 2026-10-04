@@ -156,7 +156,7 @@ attack. Set it up on a network you trust.
 
 ## Boards
 
-The last seven run the full on-screen UI: an animated avatar, push-to-talk and
+The last ones, from the Waveshare 1.75C down, run the full on-screen UI: an animated avatar, push-to-talk and
 settings. Audio and image support vary by board, so check the feature table in
 [`devices/`](devices). The others show status on a light, a ring or a simple
 status screen.
@@ -180,6 +180,9 @@ status screen.
 | M5Stack StopWatch | UI, push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | M5Stack CoreS3 | UI, touch, PWR push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | M5Stack StickC Plus2 | UI, push-to-talk, two-button menu, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
+| Waveshare ESP32-S3-Touch-LCD-1.85C (experimental) | UI, touch, push-to-talk, settings, images | `tools/muse/board.sh build s185c` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.43C (experimental) | UI, touch, push-to-talk, settings, images | `tools/muse/board.sh build s143c` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.8 (experimental) | UI, touch, push-to-talk, settings, images | `tools/muse/board.sh build s18` |
 
 See [`devices/`](devices) for each board's hardware, features, and where to
 buy one.
