@@ -1052,6 +1052,11 @@ static void tick_sound(void)
     if (on != lv_obj_has_state(s_spk_sw, LV_STATE_CHECKED)) {
         lv_obj_set_state(s_spk_sw, LV_STATE_CHECKED, on);
     }
+    int vol = muse_settings_volume();   /* also dragged on the face, or set from the phone */
+    if (vol != lv_slider_get_value(s_vol_sl) && !lv_obj_has_state(s_vol_sl, LV_STATE_PRESSED)) {
+        lv_slider_set_value(s_vol_sl, vol, LV_ANIM_OFF);
+        set_val(s_vol_val, "%d%%", vol);
+    }
     float db = muse_voice_monitor_db();
     int v = (int)(db + 70.0f);
     v = v < 0 ? 0 : (v > 60 ? 60 : v);
