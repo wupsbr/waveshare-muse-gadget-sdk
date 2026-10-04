@@ -16,7 +16,7 @@ The Linux SDK (`linux/`) and the skills (`skills/`) are unchanged.
 | 4 | Spoken replies (ElevenLabs) | Feature | On when a key is set | `muse_chat_session.cpp`, `Kconfig` |
 | 5 | All messages (pushes) | Feature + setting | **Off** | `muse_chat_session.cpp`, `muse_voice.c`, `muse_chat.h`, `muse_settings.*`, `muse_settings_ui.c` |
 | 6 | Touch-drag volume | Feature | On (touch boards) | `muse_ui.c`, `muse_settings_ui.c` |
-| 7 | Battery without a PMU | Feature | On (1.85C, 1.43C) | the two board files |
+| 7 | Battery without a PMU, simpler Battery page | Feature | On | the two board files, `muse_settings_ui.c` |
 | 8 | Display freeze fix | Fix (from upstream PR #34) | — | `boards/muse_lcd_bands.c` |
 | 9 | Watchdogs back on | Robustness | On (these boards) | the three overlays |
 | 10 | Cross-signed TLS chains | Fix for #4 | On (these boards) | the three overlays |
@@ -110,9 +110,21 @@ NVS as `pushes`.
 - **Saving.** The level is saved on release, as the settings slider does. The
   slider now follows changes made elsewhere: a drag, or BLE.
 
-## 7. Battery without a PMU
+## 7. Battery without a PMU, and a simpler Battery page
 
-The upstream Battery page already exists. It just needs `read_power`.
+**The page.** Upstream's Battery page shows a measurement panel (drain rate,
+full-charge life, screen-off, light-sleep and CPU-busy shares, wakes, and the
+locks that kept the chip awake). This fork reduces it to two rows:
+- **Battery:** the percentage, with a charge symbol while charging.
+- **Time left:** what remains at the drain measured since USB was unplugged.
+  It reads `Estimating...` until there are 10 minutes and 1% of data, and
+  `Charging` / `On USB` otherwise.
+
+The measurements themselves (`muse_battery.c`, `>power` on the console,
+`tools/muse/power.py`) are unchanged.
+
+**The readings.** The page needs `read_power`, which the 1.85C and 1.43C
+didn't have.
 
 - **1.85C.** The ADC reads GPIO8 through a 200k/100k divider. With no charge
   or VBUS pin, it infers USB from voltage trends.

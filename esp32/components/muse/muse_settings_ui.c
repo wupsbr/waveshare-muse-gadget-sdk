@@ -104,8 +104,7 @@ static const char *const SLEEP_NAMES[] = { "Never", "30 seconds", "1 minute", "2
 static lv_obj_t *s_sleep_checks[SLEEP_COUNT];
 
 /* Battery page. */
-static lv_obj_t *s_batt_status, *s_batt_level, *s_batt_drain, *s_batt_full, *s_batt_off, *s_batt_slept, *s_batt_wakes,
-    *s_batt_busy, *s_batt_awake;
+static lv_obj_t *s_batt_level, *s_batt_left;
 static int64_t s_batt_shown_us;
 
 /* Text entry page. */
@@ -1120,40 +1119,19 @@ static void tick_sleep(void)
 
 /* ---------- Battery ---------- */
 
-static void on_battery_reset(lv_event_t *e)
-{
-    (void)e;
-    muse_battery_reset();
-    s_batt_shown_us = 0;   /* show it now */
-}
-
+/*
+ * Just the level and how long it should last. The estimate is the drain
+ * muse_battery measures since USB was unplugged: it needs ten minutes and a
+ * percent used before it means anything.
+ */
 static void build_battery_page(lv_obj_t *tile)
 {
     lv_obj_t *list;
     s_battery = page(tile, "BATTERY", true, &list);
     s_batt_shown_us = 0;
-    s_batt_status = note(list, "");
     s_batt_level = info_row(list, "Battery");
-    s_batt_drain = info_row(list, "Used");
-    s_batt_full = info_row(list, "A full charge");
-    s_batt_off = info_row(list, "Screen off");
-    s_batt_slept = info_row(list, "Chip asleep");
-    s_batt_wakes = info_row(list, "Wakes");
-    s_batt_busy = info_row(list, "CPU busy");
-    s_batt_awake = note(list, "");
-    button(list, LV_SYMBOL_REFRESH "  Start over", COLOR_ACCENT, on_battery_reset, NULL);
-    note(list, "Measures from unplugging USB until it's plugged back in. The gauge moves in 1% steps, so give it a "
-               "few hours. Chip asleep is time in light sleep; CPU busy is time a core was running a task.");
-}
-
-/* A per-mille figure as a percentage. */
-static void set_pm(lv_obj_t *l, int pm)
-{
-    char buf[16] = "-";
-    if (pm >= 0) {
-        snprintf(buf, sizeof(buf), "%d.%d%%", pm / 10, pm % 10);
-    }
-    set_text(l, buf);
+    s_batt_left = info_row(list, "Time left");
+    note(list, "Time left is estimated from use since USB was unplugged, after about 10 minutes.");
 }
 
 static void tick_battery(void)
@@ -1163,64 +1141,38 @@ static void tick_battery(void)
         return;
     }
     s_batt_shown_us = now;
-    muse_battery_t b;
-    muse_battery_read(&b);
     muse_power_t p = muse_state_power();
-    char buf[96], t[24];
-
-    int h = (int)(b.secs / 3600), m = (int)(b.secs / 60 % 60);
-    if (h) {
-        snprintf(t, sizeof(t), "%d h %d min", h, m);
-    } else {
-        snprintf(t, sizeof(t), "%d min", m);
-    }
-    if (!b.started) {
-        strlcpy(buf, p.battery_pct < 0 ? "No battery" : "Unplug USB to start measuring.", sizeof(buf));
-    } else {
-        snprintf(buf, sizeof(buf), b.running ? "On battery for %s" : "Last run: %s on battery", t);
-    }
-    set_text(s_batt_status, buf);
+    char buf[48];
 
     if (p.battery_pct < 0) {
-        strlcpy(buf, "None", sizeof(buf));
-    } else if (p.battery_mv) {
-        snprintf(buf, sizeof(buf), "%s%d%%  %d.%02d V", p.charging ? LV_SYMBOL_CHARGE " " : "", p.battery_pct,
-                 p.battery_mv / 1000, p.battery_mv % 1000 / 10);
-    } else {
-        snprintf(buf, sizeof(buf), "%s%d%%", p.charging ? LV_SYMBOL_CHARGE " " : "", p.battery_pct);
+        set_text(s_batt_level, "No battery");
+        set_text(s_batt_left, "-");
+        return;
     }
+    snprintf(buf, sizeof(buf), "%s%d%%", p.charging ? LV_SYMBOL_CHARGE " " : "", p.battery_pct);
     set_text(s_batt_level, buf);
 
-    int used = b.pct_start - b.pct_now, rate10, full_h;
-    if (!b.started) {
-        set_text(s_batt_drain, "-");
-        set_text(s_batt_full, "-");
+    muse_battery_t b;
+    muse_battery_read(&b);
+    int rate10, full_h;
+    if (p.charging) {
+        set_text(s_batt_left, "Charging");
+    } else if (!b.running) {
+        set_text(s_batt_left, "On USB");
     } else if (muse_battery_drain(&b, &rate10, &full_h)) {
-        snprintf(buf, sizeof(buf), "%d%%, %d.%d%%/h", used, rate10 / 10, rate10 % 10);
-        set_text(s_batt_drain, buf);
-        snprintf(buf, sizeof(buf), "lasts ~%d h", full_h);
-        set_text(s_batt_full, buf);
+        /* What's left at the rate measured so far: what remains over what was
+         * used, times the time it took (not rate10, which rounds to 0 when slow). */
+        int used = b.pct_start - b.pct_now;
+        int mins = (int)(p.battery_pct * b.secs / (used * 60LL));
+        if (mins >= 60) {
+            snprintf(buf, sizeof(buf), "~%d h %02d min", mins / 60, mins % 60);
+        } else {
+            snprintf(buf, sizeof(buf), "~%d min", mins);
+        }
+        set_text(s_batt_left, buf);
     } else {
-        snprintf(buf, sizeof(buf), "%d%% so far", used > 0 ? used : 0);
-        set_text(s_batt_drain, buf);
-        set_text(s_batt_full, "measuring");
+        set_text(s_batt_left, "Estimating...");
     }
-
-    set_pm(s_batt_off, b.started ? b.screen_off_pm : -1);
-    set_pm(s_batt_slept, b.started ? b.slept_pm : -1);
-    set_pm(s_batt_busy, b.started ? b.busy_pm : -1);
-    if (b.started && b.secs && b.slept_pm >= 0) {
-        int per10 = (int)(b.sleeps * 10LL / b.secs);
-        snprintf(buf, sizeof(buf), "%d.%d/s", per10 / 10, per10 % 10);
-        set_text(s_batt_wakes, buf);
-    } else {
-        set_text(s_batt_wakes, "-");
-    }
-    buf[0] = '\0';
-    if (b.started && b.awake[0]) {
-        snprintf(buf, sizeof(buf), "Also kept awake by: %s", b.awake);
-    }
-    set_text(s_batt_awake, buf);
 }
 
 /* ---------- Power ---------- */
