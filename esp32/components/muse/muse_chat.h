@@ -87,6 +87,12 @@ void muse_hatch_turn_end(void);
 /* Abandons the turn (tap, or barge-in during the reply). */
 void muse_hatch_turn_cancel(void);
 
+/* A push (an assistant message with no turn waiting for it) has opened a
+ * reply-only turn: true once, then play it with muse_hatch_turn_event/_read
+ * like any reply. A press that starts a turn drops it (muse_hatch_push_drop). */
+bool muse_hatch_push_take(void);
+void muse_hatch_push_drop(void);
+
 typedef enum {
     MUSE_HATCH_EV_NONE,
     MUSE_HATCH_EV_HEARD,    /* transcript so far (partial while talking, then final) */

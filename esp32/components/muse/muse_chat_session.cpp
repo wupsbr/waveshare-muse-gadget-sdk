@@ -52,6 +52,7 @@
 #include "esp_attr.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -69,6 +70,7 @@ extern "C" {
 #include "muse_account_api.h"
 #include "muse_link.h"
 #include "muse_settings.h"
+#include "muse_state.h"
 #include "muse_wifi.h"
 }
 #include "muse_chat_priv.h"
@@ -938,10 +940,13 @@ static size_t resample(resampler_t *r, const int16_t *in, size_t n, int16_t *out
 
 /* ---- Turn: dictation ---- */
 
+static void tts_cancel(void);
+
 static void turn_reset_streams(void)
 {
     send_reset(s_turn.dict_id);
     send_reset(s_turn.chat_id);
+    tts_cancel();
     for (auto &s : s_streams) {
         if (s.kind == K_TTS) {
             send_reset(s.id);
@@ -949,8 +954,13 @@ static void turn_reset_streams(void)
     }
 }
 
+static void remember_shown(const char *id);
+
 static void turn_finish(void)
 {
+    for (int i = 0; i < s_turn.nmsgs; i++) {
+        remember_shown(s_turn.msgs[i].id);
+    }
     turn_reset_streams();
     s_turn.phase = P_IDLE;
     s_turn.dict_id = s_turn.chat_id = 0;
@@ -1399,6 +1409,54 @@ static const char *msg_id(cJSON *payload, cJSON *event)
     return id && id[0] ? id : nullptr;
 }
 
+/*
+ * Pushes: assistant messages that arrive with no turn waiting for them, such
+ * as Muse writing first or replying to something said in the app, in the same
+ * conversation. They open a reply-only turn (push_begin) that the voice task
+ * plays like any reply (muse_hatch_push_take). The ids of messages already
+ * shown are kept, since a turn's message.assistant can land after it ends.
+ */
+#define SHOWN_IDS 8
+
+static std::atomic<bool> s_push_pending{false};
+static char s_shown_ids[SHOWN_IDS][sizeof(msg_t::id)];
+static int s_shown_next;
+
+static void remember_shown(const char *id)
+{
+    strlcpy(s_shown_ids[s_shown_next], id, sizeof(s_shown_ids[0]));
+    s_shown_next = (s_shown_next + 1) % SHOWN_IDS;
+}
+
+static bool was_shown(const char *id)
+{
+    for (auto &s : s_shown_ids) {
+        if (s[0] && !strcmp(s, id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool turn_start(uint32_t gen, bool text);
+
+static void push_begin(const char *id)
+{
+    /* Only between turns, with the voice task free to play it. */
+    if (muse_state_mode(nullptr) != MUSE_MODE_IDLE || s_push_pending.load()) {
+        ESP_LOGI(TAG, "push: busy, message %s left for the app", id);
+        return;
+    }
+    uint32_t gen = ++s_gen;
+    if (!turn_start(gen, false)) {
+        return;
+    }
+    s_turn.phase = P_WAIT_REPLY;
+    s_turn.chat_us = s_turn.last_event_us = now_us();
+    s_push_pending = true;
+    ESP_LOGI(TAG, "push: message %s with no turn waiting, playing it", id);
+}
+
 static void on_event(cJSON *line)
 {
     if (strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(line, "type")) ?: "", "event") != 0) {
@@ -1412,11 +1470,17 @@ static void on_event(cJSON *line)
         }
         s_last_seq = v > s_last_seq ? v : s_last_seq;
     }
+    const char *event = cJSON_GetStringValue(cJSON_GetObjectItem(line, "event")) ?: "";
+    cJSON *payload = cJSON_GetObjectItem(line, "payload");
+    if (s_turn.phase == P_IDLE && (!strcmp(event, "delta.message_start") || !strcmp(event, "message.assistant"))) {
+        const char *id = msg_id(payload, line);
+        if (id && !was_shown(id)) {
+            push_begin(id);
+        }
+    }
     if (s_turn.phase != P_WAIT_REPLY) {
         return;
     }
-    const char *event = cJSON_GetStringValue(cJSON_GetObjectItem(line, "event")) ?: "";
-    cJSON *payload = cJSON_GetObjectItem(line, "payload");
 
     if (!strcmp(event, "agent.status") || !strcmp(event, "task.status")) {
         const char *code = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "activity_code"));
@@ -1492,6 +1556,154 @@ static void on_chat_ack(stream_t *s)
 
 /* ---- Turn: speech ---- */
 
+/*
+ * ElevenLabs text-to-speech (CONFIG_MUSE_ELEVENLABS_API_KEY). One fetch at a
+ * time runs on its own task, over HTTPS to the internet rather than the VM
+ * connection, and streams the MP3 into s_tts_rx. This task drains it into
+ * tts_data() (tts_pump), so the turn's MP3 state stays on one task. A turn
+ * that ends or is cancelled bumps s_tts_job; the fetch sees it and stops.
+ */
+#define TTS_RX_BYTES (64 * 1024)
+#define TTS_READ_BYTES 2048
+#define TTS_URL_MAX 192
+
+struct tts_job_t {
+    uint32_t job;
+    char text[TEXT_MAX];
+};
+
+static QueueHandle_t s_tts_jobs;
+static StreamBufferHandle_t s_tts_rx;
+static std::atomic<uint32_t> s_tts_job{0};
+static std::atomic<bool> s_tts_busy{false};    /* the fetch task holds a job */
+static std::atomic<bool> s_tts_ok{false};      /* the last job's response was a whole MP3 */
+static bool s_tts_pending;                     /* tts_msg's speech is still arriving */
+
+static bool tts_enabled(void)
+{
+    return CONFIG_MUSE_ELEVENLABS_API_KEY[0] != '\0';
+}
+
+static bool tts_send(uint32_t job, const uint8_t *data, size_t len)
+{
+    while (len) {
+        if (job != s_tts_job.load()) {
+            return false;
+        }
+        size_t n = xStreamBufferSend(s_tts_rx, data, len, pdMS_TO_TICKS(100));
+        data += n;
+        len -= n;
+    }
+    return true;
+}
+
+static bool tts_fetch(const tts_job_t &j)
+{
+    char url[TTS_URL_MAX];
+    snprintf(url, sizeof(url), "https://api.elevenlabs.io/v1/text-to-speech/%s/stream?output_format=mp3_22050_32",
+             CONFIG_MUSE_ELEVENLABS_VOICE_ID);
+    cJSON *req = cJSON_CreateObject();
+    cJSON_AddStringToObject(req, "text", j.text);
+    cJSON_AddStringToObject(req, "model_id", CONFIG_MUSE_ELEVENLABS_MODEL);
+    char *body = cJSON_PrintUnformatted(req);
+    cJSON_Delete(req);
+    if (!body) {
+        return false;
+    }
+    esp_http_client_config_t cfg = {};
+    cfg.url = url;
+    cfg.method = HTTP_METHOD_POST;
+    cfg.timeout_ms = 15000;
+    cfg.buffer_size = TTS_READ_BYTES;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    bool ok = false;
+    if (c) {
+        esp_http_client_set_header(c, "xi-api-key", CONFIG_MUSE_ELEVENLABS_API_KEY);
+        esp_http_client_set_header(c, "Content-Type", "application/json");
+        esp_http_client_set_header(c, "Accept", "audio/mpeg");
+        int len = strlen(body);
+        int64_t t0 = esp_timer_get_time();
+        if (esp_http_client_open(c, len) != ESP_OK || esp_http_client_write(c, body, len) != len) {
+            ESP_LOGW(TAG, "speech: can't reach ElevenLabs");
+        } else {
+            esp_http_client_fetch_headers(c);
+            int status = esp_http_client_get_status_code(c);
+            static uint8_t buf[TTS_READ_BYTES];
+            if (status != 200) {
+                int n = esp_http_client_read(c, (char *)buf, sizeof(buf) - 1);
+                buf[n > 0 ? n : 0] = '\0';
+                ESP_LOGW(TAG, "speech: ElevenLabs HTTP %d %s", status, (char *)buf);
+            } else {
+                size_t total = 0;
+                int n;
+                ok = true;
+                while ((n = esp_http_client_read(c, (char *)buf, sizeof(buf))) > 0) {
+                    if (!total) {
+                        ESP_LOGI(TAG, "speech: first audio after %.2fs", (esp_timer_get_time() - t0) / 1e6);
+                    }
+                    total += n;
+                    if (!tts_send(j.job, buf, n)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                ok = ok && n == 0 && total > 0 && esp_http_client_is_complete_data_received(c);
+                ESP_LOGI(TAG, "speech: %u bytes of MP3%s", (unsigned)total, ok ? "" : ", incomplete");
+            }
+        }
+        esp_http_client_close(c);
+        esp_http_client_cleanup(c);
+    }
+    cJSON_free(body);
+    return ok;
+}
+
+static void tts_task(void *arg)
+{
+    (void)arg;
+    static tts_job_t j;
+    for (;;) {
+        if (xQueueReceive(s_tts_jobs, &j, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        s_tts_ok = tts_fetch(j);
+        s_tts_busy = false;
+    }
+}
+
+/* Hands the text to the fetch task. False: speak nothing, show the text. */
+static bool tts_start(const char *text)
+{
+    if (!s_tts_jobs) {
+        s_tts_jobs = xQueueCreateWithCaps(1, sizeof(tts_job_t), MALLOC_CAP_SPIRAM);
+        s_tts_rx = xStreamBufferCreateWithCaps(TTS_RX_BYTES, 1, MALLOC_CAP_SPIRAM);
+        if (!s_tts_jobs || !s_tts_rx ||
+            xTaskCreatePinnedToCoreWithCaps(tts_task, "muse_tts", 8 * 1024, nullptr, 4, nullptr, 1,
+                                            MALLOC_CAP_SPIRAM) != pdPASS) {
+            ESP_LOGE(TAG, "speech: no memory for the fetch task");
+            return false;
+        }
+    }
+    static tts_job_t j;
+    j.job = ++s_tts_job;
+    strlcpy(j.text, text, sizeof(j.text));
+    xStreamBufferReset(s_tts_rx);
+    s_tts_ok = false;
+    s_tts_busy = true;
+    if (xQueueSend(s_tts_jobs, &j, 0) != pdTRUE) {
+        s_tts_busy = false;
+        return false;
+    }
+    return true;
+}
+
+static void tts_cancel(void)
+{
+    ++s_tts_job;
+    s_tts_pending = false;
+}
+
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1501,6 +1713,27 @@ static void start_tts(void)
         msg_t &m = s_turn.msgs[i];
         if (m.tts != TTS_QUEUED) {
             continue;
+        }
+        if (tts_enabled() && s_turn.texts && muse_settings_speaker_on()) {
+            if (s_tts_busy.load()) {
+                return;   /* a cancelled fetch is still winding down */
+            }
+            if (tts_start(s_turn.texts + i * TEXT_MAX)) {
+                m.tts = TTS_ACTIVE;
+                s_turn.tts_msg = i;
+                s_turn.silent = false;
+                m.pcm_start = s_turn.pcm_out;
+                m.pcm_frames = 0;
+                s_turn.mp3_len = 0;
+                s_turn.mp3_ended = false;
+                s_turn.kbps = 0;
+                s_turn.down_rate = 0;
+                mp3dec_init(&s_turn.dec);
+                s_tts_pending = true;
+                ESP_LOGI(TAG, "speaking message %s (%u chars)", m.id, (unsigned)m.len);
+                show_reply_start(m);
+                return;
+            }
         }
         /*
          * Replies are text, shown at reading pace: silence in place of speech
@@ -1552,6 +1785,37 @@ static void tts_end(stream_t *s, bool ok)
         s_turn.msgs[i].tts = TTS_FINISHED;
         s_turn.tts_msg = -1;
     }
+}
+
+/*
+ * Moves fetched speech into the turn's MP3 buffer, and ends it once the fetch
+ * is done. A fetch that failed before any speech played falls back to
+ * showing the text at reading pace.
+ */
+static void tts_pump(void)
+{
+    if (!s_tts_pending || s_turn.tts_msg < 0) {
+        return;
+    }
+    static uint8_t chunk[TTS_READ_BYTES];
+    while (MP3_BUF - s_turn.mp3_len >= sizeof(chunk)) {
+        size_t n = xStreamBufferReceive(s_tts_rx, chunk, sizeof(chunk), 0);
+        if (!n) {
+            break;
+        }
+        tts_data(chunk, n);
+    }
+    if (s_tts_busy.load() || !xStreamBufferIsEmpty(s_tts_rx)) {
+        return;
+    }
+    s_tts_pending = false;
+    msg_t &m = s_turn.msgs[s_turn.tts_msg];
+    if (s_tts_ok.load() || s_turn.pcm_out != m.pcm_start || s_turn.mp3_len) {
+        s_turn.mp3_ended = true;   /* decode() drains the rest, then finishes */
+        return;
+    }
+    m.pcm_frames = (uint32_t)(m.len * MIC_RATE / TEXT_CHARS_PER_S);
+    s_turn.silent = true;
 }
 
 /* Speaker off: queues the shown message's silence while the reply buffer has room. */
@@ -1976,6 +2240,7 @@ static void hatch_task(void *arg)
         }
         if (s_turn.phase == P_WAIT_REPLY) {
             start_tts();
+            tts_pump();
             decode();
         }
         if (!s_connected) {
@@ -1986,7 +2251,8 @@ static void hatch_task(void *arg)
         int64_t t = now_us();
         if (t - s_conn.last_rx_us > DEAD_US) {
             drop_connection("server went quiet");
-        } else if (s_turn.phase == P_IDLE && t - s_conn.last_use_us > IDLE_CLOSE_US) {
+        } else if (s_turn.phase == P_IDLE && t - s_conn.last_use_us > IDLE_CLOSE_US && muse_state_on_battery()) {
+            /* On USB the connection stays up, so pushes keep arriving. */
             disconnect("idle");
             muse_hatch_report(MUSE_HATCH_UNTESTED, "");
             s_auto_next_us = INT64_MAX;   /* the next turn connects */
@@ -2081,6 +2347,16 @@ extern "C" void muse_hatch_turn_audio(const int16_t *pcm, size_t frames)
 extern "C" size_t muse_hatch_turn_audio_wait(const int16_t *pcm, size_t frames, int wait_ms)
 {
     return xStreamBufferSend(s_in, pcm, frames * sizeof(int16_t), pdMS_TO_TICKS(wait_ms)) / sizeof(int16_t);
+}
+
+extern "C" bool muse_hatch_push_take(void)
+{
+    return s_push_pending.exchange(false);
+}
+
+extern "C" void muse_hatch_push_drop(void)
+{
+    s_push_pending = false;
 }
 
 extern "C" void muse_hatch_turn_end(void)

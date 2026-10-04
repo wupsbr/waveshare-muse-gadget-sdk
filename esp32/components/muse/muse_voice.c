@@ -343,11 +343,12 @@ static void go_idle(const char *caption);
 /*
  * Plays Hatch's reply as it arrives, with its text as the caption. Returns
  * true if interrupted by a new press. *delivered: the VM has the note.
+ * `waiting` is the caption until there's a transcript or reply.
  */
-static bool hatch_reply(bool *delivered)
+static bool hatch_reply_as(bool *delivered, const char *waiting)
 {
     muse_state_set_mode(MUSE_MODE_THINKING);
-    muse_state_set_caption("SENDING VOICE NOTE");   /* until there's a transcript or reply */
+    muse_state_set_caption("%s", waiting);
     static int16_t buf[MUSE_AUDIO_CHUNK];
     static const int16_t silence[MUSE_AUDIO_CHUNK];
     char text[96];
@@ -427,6 +428,23 @@ static bool hatch_reply(bool *delivered)
         vTaskDelay(pdMS_TO_TICKS(2500));
     }
     return false;
+}
+
+static bool hatch_reply(bool *delivered)
+{
+    return hatch_reply_as(delivered, "SENDING VOICE NOTE");
+}
+
+/* A push from Muse: wake the screen and play it like a reply. True if a
+ * press interrupted it, to be recorded as one. */
+static bool play_push(void)
+{
+    ESP_LOGI(TAG, "playing a push from Muse");
+    muse_state_set_asleep(false);
+    muse_state_poke();
+    muse_wifi_power(MUSE_WIFI_FULL);
+    bool delivered;
+    return hatch_reply_as(&delivered, "");
 }
 
 static void go_idle(const char *caption)
@@ -841,8 +859,17 @@ static void voice_task(void *arg)
             /* The 20 ms read paces this loop. */
             idle_capture();
             if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) {
+                if (muse_hatch_push_take()) {
+                    pending_down = play_push();
+                    pre_reset();
+                    if (!pending_down && muse_state_mode(NULL) != MUSE_MODE_IDLE) {
+                        muse_state_make_happy();
+                        go_idle("");
+                    }
+                }
                 continue;
             }
+            muse_hatch_push_drop();   /* a press goes first; its turn replaces the push's */
             muse_state_poke();
             if (ev.type != MUSE_PTT_DOWN) {
                 continue;
