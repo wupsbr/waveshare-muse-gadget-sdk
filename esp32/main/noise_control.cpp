@@ -394,6 +394,13 @@ static ssize_t ws_recv_frame(esp_tls_t *tls, uint8_t *buf, size_t buf_cap) {
                  (unsigned long long)payload_len, (unsigned)buf_cap);
         return -1;
     }
+    // RFC 6455 §5.5: control frames carry at most 125 bytes. A longer ping
+    // can't be echoed in a pong's 7-bit length field, so fail the connection
+    // instead of sending a malformed pong.
+    if (opcode >= 0x8 && payload_len > 125) {
+        ESP_LOGE(TAG, "WS control frame too large: %llu", (unsigned long long)payload_len);
+        return -1;
+    }
 
     // Read payload
     size_t plen = static_cast<size_t>(payload_len);
@@ -515,6 +522,10 @@ static ssize_t ws_recv_frame_nonblock(esp_tls_t *tls, uint8_t *buf, size_t cap) 
 
     if (payload_len > cap) {
         ESP_LOGE(TAG, "WS frame too large: %llu", (unsigned long long)payload_len);
+        return -1;
+    }
+    if (opcode >= 0x8 && payload_len > 125) { // RFC 6455 §5.5, as above
+        ESP_LOGE(TAG, "WS control frame too large: %llu", (unsigned long long)payload_len);
         return -1;
     }
 
@@ -1772,16 +1783,27 @@ static void process_inbound_body_chunk(
                     cJSON *id = cJSON_GetObjectItem(msg, "id");
                     if (cJSON_IsString(id) && id->valuestring
                         && strcmp(id->valuestring, s_register_req_id) == 0) {
-                        s_register_acked = true;
-                        ESP_LOGI(TAG, "link.register acked; tunnel may open");
-                        cJSON *type = cJSON_GetObjectItem(msg, "type");
-                        cJSON *reply = cJSON_GetObjectItem(msg, "result");
-                        cJSON *status = cJSON_GetObjectItem(reply, "status");
-                        s_heartbeat_registered = cJSON_IsString(type)
-                            && strcmp(type->valuestring, "res") == 0
-                            && cJSON_IsString(status)
-                            && strcmp(status->valuestring, "registered") == 0
-                            && !cJSON_GetObjectItem(msg, "error");
+                        cJSON *failure = cJSON_GetObjectItem(msg, "error");
+                        if (failure && !cJSON_IsNull(failure) && !cJSON_IsFalse(failure)) {
+                            // Not registered, so the server would refuse the
+                            // tunnel and the Muse can't invoke this device.
+                            cJSON *reason = cJSON_IsObject(failure)
+                                ? cJSON_GetObjectItem(failure, "message") : failure;
+                            ESP_LOGE(TAG, "link.register rejected: %s",
+                                     cJSON_IsString(reason) && reason->valuestring
+                                         ? reason->valuestring : "no reason given");
+                        } else {
+                            s_register_acked = true;
+                            ESP_LOGI(TAG, "link.register acked; tunnel may open");
+                            cJSON *type = cJSON_GetObjectItem(msg, "type");
+                            cJSON *reply = cJSON_GetObjectItem(msg, "result");
+                            cJSON *status = cJSON_GetObjectItem(reply, "status");
+                            s_heartbeat_registered = cJSON_IsString(type)
+                                && strcmp(type->valuestring, "res") == 0
+                                && cJSON_IsString(status)
+                                && strcmp(status->valuestring, "registered") == 0
+                                && !failure;
+                        }
                     }
                     cJSON_Delete(msg);
                 }

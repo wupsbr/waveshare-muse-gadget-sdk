@@ -232,6 +232,7 @@ struct turn_t {
     char committed[512];     /* finals that arrived before the half-close */
     char partial[512];
     char user_ids[2][80];
+    muse_chat_rejected_t rejected;
     msg_t msgs[MAX_MSGS];
     int nmsgs;
     bool agent_busy;
@@ -930,7 +931,8 @@ static size_t resample(resampler_t *r, const int16_t *in, size_t n, int16_t *out
         size_t i = r->pos >> 16;
         int32_t a = i ? in[i - 1] : r->prev;
         int32_t b = in[i];
-        out[o++] = a + (((b - a) * (int32_t)(r->pos & 0xffff)) >> 16);
+        /* (b - a) spans 17 bits and the fraction 16, so the product needs 64. */
+        out[o++] = (int16_t)(a + (int32_t)(((int64_t)(b - a) * (int64_t)(r->pos & 0xffff)) >> 16));
         r->pos += r->step;
     }
     r->pos -= n << 16;
@@ -1286,6 +1288,73 @@ static void on_dictation_end(bool ok)
 
 /* ---- Turn: reply ---- */
 
+/*
+ * Pushes: assistant messages that arrive with no turn waiting for them, such
+ * as Muse writing first or replying to something said in the app, in the same
+ * conversation. They open a reply-only turn (push_begin) that the voice task
+ * plays like any reply (muse_hatch_push_take). The ids of messages already
+ * shown are kept, since a turn's message.assistant can land after it ends.
+ */
+#define SHOWN_IDS 8
+
+static std::atomic<bool> s_push_pending{false};
+static char s_shown_ids[SHOWN_IDS][sizeof(msg_t::id)];
+static int s_shown_next;
+
+static void remember_shown(const char *id)
+{
+    strlcpy(s_shown_ids[s_shown_next], id, sizeof(s_shown_ids[0]));
+    s_shown_next = (s_shown_next + 1) % SHOWN_IDS;
+}
+
+static bool was_shown(const char *id)
+{
+    for (auto &s : s_shown_ids) {
+        if (s[0] && !strcmp(s, id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool turn_start(uint32_t gen, bool text);
+
+static void push_begin(const char *id)
+{
+    if (!muse_settings_pushes_on()) {
+        ESP_LOGI(TAG, "push: message %s left for the app (All messages is off)", id);
+        return;
+    }
+    /* Only between turns, with the voice task free to play it. */
+    if (muse_state_mode(nullptr) != MUSE_MODE_IDLE || s_push_pending.load()) {
+        ESP_LOGI(TAG, "push: busy, message %s left for the app", id);
+        return;
+    }
+    uint32_t gen = ++s_gen;
+    if (!turn_start(gen, false)) {
+        return;
+    }
+    s_turn.phase = P_WAIT_REPLY;
+    s_turn.chat_us = s_turn.last_event_us = now_us();
+    s_push_pending = true;
+    ESP_LOGI(TAG, "push: message %s with no turn waiting, playing it", id);
+}
+
+static const char *msg_id(cJSON *payload, cJSON *event);
+
+/* An assistant message starting with no turn waiting: a push, unless it's
+ * one already shown. on_event calls this before its turn checks. */
+static void push_maybe_begin(const char *event, cJSON *payload, cJSON *line)
+{
+    if (s_turn.phase != P_IDLE || (strcmp(event, "delta.message_start") && strcmp(event, "message.assistant"))) {
+        return;
+    }
+    const char *id = msg_id(payload, line);
+    if (id && !was_shown(id)) {
+        push_begin(id);
+    }
+}
+
 static int find_msg(const char *id)
 {
     for (int i = 0; i < s_turn.nmsgs; i++) {
@@ -1304,6 +1373,9 @@ static bool is_user_id(const char *id)
 /* The message `id` if it belongs to this turn, binding it on first sight; else -1. */
 static int bind_msg(const char *id, cJSON *payload)
 {
+    if (muse_chat_is_rejected(&s_turn.rejected, id)) {
+        return -1;
+    }
     int i = find_msg(id);
     if (i >= 0 || s_turn.phase != P_WAIT_REPLY) {
         return i;
@@ -1314,6 +1386,10 @@ static int bind_msg(const char *id, cJSON *payload)
     }
     /* Once the ack names our message, replies to anything else are someone else's. */
     if (parent && parent[0] && s_turn.acked && !is_user_id(parent) && find_msg(parent) < 0) {
+        muse_chat_reject(&s_turn.rejected, id);
+        return -1;
+    }
+    if ((!parent || !parent[0]) && s_turn.rejected.overflow) {
         return -1;
     }
     if (s_turn.nmsgs == MAX_MSGS) {
@@ -1409,58 +1485,6 @@ static const char *msg_id(cJSON *payload, cJSON *event)
     return id && id[0] ? id : nullptr;
 }
 
-/*
- * Pushes: assistant messages that arrive with no turn waiting for them, such
- * as Muse writing first or replying to something said in the app, in the same
- * conversation. They open a reply-only turn (push_begin) that the voice task
- * plays like any reply (muse_hatch_push_take). The ids of messages already
- * shown are kept, since a turn's message.assistant can land after it ends.
- */
-#define SHOWN_IDS 8
-
-static std::atomic<bool> s_push_pending{false};
-static char s_shown_ids[SHOWN_IDS][sizeof(msg_t::id)];
-static int s_shown_next;
-
-static void remember_shown(const char *id)
-{
-    strlcpy(s_shown_ids[s_shown_next], id, sizeof(s_shown_ids[0]));
-    s_shown_next = (s_shown_next + 1) % SHOWN_IDS;
-}
-
-static bool was_shown(const char *id)
-{
-    for (auto &s : s_shown_ids) {
-        if (s[0] && !strcmp(s, id)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool turn_start(uint32_t gen, bool text);
-
-static void push_begin(const char *id)
-{
-    if (!muse_settings_pushes_on()) {
-        ESP_LOGI(TAG, "push: message %s left for the app (All messages is off)", id);
-        return;
-    }
-    /* Only between turns, with the voice task free to play it. */
-    if (muse_state_mode(nullptr) != MUSE_MODE_IDLE || s_push_pending.load()) {
-        ESP_LOGI(TAG, "push: busy, message %s left for the app", id);
-        return;
-    }
-    uint32_t gen = ++s_gen;
-    if (!turn_start(gen, false)) {
-        return;
-    }
-    s_turn.phase = P_WAIT_REPLY;
-    s_turn.chat_us = s_turn.last_event_us = now_us();
-    s_push_pending = true;
-    ESP_LOGI(TAG, "push: message %s with no turn waiting, playing it", id);
-}
-
 static void on_event(cJSON *line)
 {
     if (strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(line, "type")) ?: "", "event") != 0) {
@@ -1476,12 +1500,7 @@ static void on_event(cJSON *line)
     }
     const char *event = cJSON_GetStringValue(cJSON_GetObjectItem(line, "event")) ?: "";
     cJSON *payload = cJSON_GetObjectItem(line, "payload");
-    if (s_turn.phase == P_IDLE && (!strcmp(event, "delta.message_start") || !strcmp(event, "message.assistant"))) {
-        const char *id = msg_id(payload, line);
-        if (id && !was_shown(id)) {
-            push_begin(id);
-        }
-    }
+    push_maybe_begin(event, payload, line);
     if (s_turn.phase != P_WAIT_REPLY) {
         return;
     }
@@ -2295,8 +2314,18 @@ extern "C" void muse_hatch_start(void)
     }
     cJSON_Hooks hooks = { json_alloc, heap_caps_free };
     cJSON_InitHooks(&hooks);
-    s_cmds = xQueueCreate(16, sizeof(cmd_t));
-    s_events = xQueueCreate(16, sizeof(ev_t));
+    /* Keep the command/event queues out of internal DRAM, which Wi-Fi, BLE and
+     * mbedTLS can exhaust: when the allocation failed here hatch_task never
+     * started and every turn was silently dropped. Fall back to internal RAM
+     * on parts without usable PSRAM. */
+    s_cmds = xQueueCreateWithCaps(16, sizeof(cmd_t), MALLOC_CAP_SPIRAM);
+    if (!s_cmds) {
+        s_cmds = xQueueCreate(16, sizeof(cmd_t));
+    }
+    s_events = xQueueCreateWithCaps(16, sizeof(ev_t), MALLOC_CAP_SPIRAM);
+    if (!s_events) {
+        s_events = xQueueCreate(16, sizeof(ev_t));
+    }
     s_in = xStreamBufferCreateWithCaps(IN_BYTES, 1, MALLOC_CAP_SPIRAM);
     s_out = xStreamBufferCreateWithCaps(OUT_BYTES, 1, MALLOC_CAP_SPIRAM);
     s_turn.chunk = static_cast<uint8_t *>(psram_alloc(DICT_CHUNK_BYTES + sizeof(MUSE_HATCH_NOTE_TAIL)));

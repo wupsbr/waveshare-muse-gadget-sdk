@@ -1,7 +1,7 @@
 # What this fork adds to Meta's SDK
 
 Baseline: [`facebookincubator/muse-gadget-sdk`](https://github.com/facebookincubator/muse-gadget-sdk)
-at `693cde9` ("Support the reTerminal E1002's six-colour e-paper", #35). Everything
+up to `b139b45` (synced on 2026-10-07; first forked at `693cde9`). Everything
 below is on top of it. To see it all: `git diff upstream/main`.
 
 The Linux SDK (`linux/`) and the skills (`skills/`) are unchanged.
