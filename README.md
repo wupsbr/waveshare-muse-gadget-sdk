@@ -1,6 +1,6 @@
 # Waveshare × Muse Gadgets
 
-**Meta's [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk), running on three round and square Waveshare ESP32-S3 boards — and talking back out loud.**
+**Meta's [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk), running on four round and square Waveshare ESP32-S3 boards — and talking back out loud.**
 
 <p align="center">
   <img src="docs/images/waveshare-muse-boards.jpg" width="820" alt="Three Waveshare ESP32-S3 boards running Muse next to a MacBook: the ESP32-S3-Touch-LCD-1.85C in its round speaker enclosure at the back, the round ESP32-S3-Touch-AMOLED-1.43C in front, and the square ESP32-S3-Touch-AMOLED-1.8 on the right asking to set up Wi-Fi">
@@ -8,19 +8,20 @@
   <sub>Muse on all three: the <b>LCD 1.85C</b> in its speaker enclosure (back), the round <b>AMOLED 1.43C</b> (front) and the <b>AMOLED 1.8</b> waiting for Wi-Fi (right).</sub>
 </p>
 
-This is a fork of `facebookincubator/muse-gadget-sdk` that adds three Waveshare boards to the ESP32 Device SDK, plus a few features the upstream firmware doesn't have yet: spoken replies, replies you didn't ask for (pushes), touch volume and battery level on boards without a power chip.
+This is a fork of `facebookincubator/muse-gadget-sdk` that adds four Waveshare boards to the ESP32 Device SDK, plus a few features the upstream firmware doesn't have yet: spoken replies, replies you didn't ask for (pushes), touch volume and battery level on boards without a power chip.
 
-| | Waveshare ESP32-S3-Touch-LCD-1.85C | Waveshare ESP32-S3-Touch-AMOLED-1.43C | Waveshare ESP32-S3-Touch-AMOLED-1.8 |
-|---|---|---|---|
-| Screen | 1.85" round LCD, 360×360, ST77916 (QSPI) | 1.43" round AMOLED, 466×466, SH8601 (QSPI) | 1.8" AMOLED, 368×448, SH8601 or CO5300 (QSPI) |
-| Touch | CST816 | FocalTech-style @ 0x15 | FT3168 or CST816 |
-| Audio | ES8311 + amp, ES7210 dual mic | ES8311 + NS4150B, ES7210 dual mic | ES8311 (speaker and mic) |
-| Power | No PMU · battery by ADC | No PMU · battery by ADC + charge pin | AXP2101 |
-| Flash / PSRAM | 16 MB / 8 MB octal | 8 MB / 8 MB octal (PICO-1-N8R8) | 16 MB / 8 MB octal |
-| Talk button | BOOT | BOOT | BOOT (PWR is aux) |
-| Alias | `s185c` | `s143c` | `s18` |
+| | Waveshare ESP32-S3-Touch-LCD-1.85C | Waveshare ESP32-S3-Touch-AMOLED-1.43C | Waveshare ESP32-S3-Touch-AMOLED-1.8 | Waveshare ESP32-S3-Touch-AMOLED-1.75C |
+|---|---|---|---|---|
+| Screen | 1.85" round LCD, 360×360, ST77916 (QSPI) | 1.43" round AMOLED, 466×466, SH8601 (QSPI) | 1.8" AMOLED, 368×448, SH8601 or CO5300 (QSPI) | 1.75" round AMOLED, 466×466, CO5300 (QSPI) |
+| Touch | CST816 | FocalTech-style @ 0x15 | FT3168 or CST816 | CST9217 |
+| Audio | ES8311 + amp, ES7210 dual mic | ES8311 + NS4150B, ES7210 dual mic | ES8311 (speaker and mic) | ES8311 + amp, ES7210 dual mic |
+| Power | No PMU · battery by ADC | No PMU · battery by ADC + charge pin | AXP2101 | AXP2101 |
+| Flash / PSRAM | 16 MB / 8 MB octal | 8 MB / 8 MB octal (PICO-1-N8R8) | 16 MB / 8 MB octal | 32 MB / 8 MB octal |
+| Talk button | BOOT | BOOT | BOOT (PWR is aux) | BOOT (PWR is aux) |
+| Driver | bare-metal | bare-metal | bare-metal | Waveshare BSP (`esp-bsp`) |
+| Alias | `s185c` | `s143c` | `s18` | `s3` |
 
-All three run the **full Muse UI**: animated avatar, push-to-talk, touch settings, images from Muse, the home-network tunnel and OTA. They are community ports and **experimental**.
+All four run the **full Muse UI**: animated avatar, push-to-talk, touch settings, images from Muse, the home-network tunnel and OTA. They are community ports and **experimental**.
 
 ## What's new compared to upstream
 
@@ -153,6 +154,7 @@ Things that cost us time, so they don't cost you:
 - **1.43C** is mounted upside down: `MADCTL 0xC0`, and touch is flipped on both axes. PWR drives a hardware power latch, not a GPIO.
 - **1.8** comes in two revisions (SH8601 + FT3168, or CO5300 + CST816). The board file probes the touch controller to tell them apart.
 - **ElevenLabs over HTTPS** needs `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y`: `api.elevenlabs.io` sends GTS Root R1 cross-signed by a GlobalSign root that's no longer in ESP-IDF's bundle.
+- **ElevenLabs trust, the other route:** instead of the flag, append the missing GlobalSign root to a custom bundle with `CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE`. Same chain, trusted directly at its root rather than matched through the cross-sign; useful when the stock bundle can't complete the match.
 - **USB hubs and docks** can drop the board for minutes, which looks exactly like a firmware hang. Flash and monitor straight from the computer's port.
 
 ## Repository layout
@@ -163,6 +165,7 @@ esp32/                                   Meta's ESP32 Device SDK, plus:
     board_waveshare_s3_185c.c            1.85C: ST77916, CST816, TCA9554, ES8311/ES7210, ADC battery
     board_waveshare_s3_143c.c            1.43C: SH8601, touch @0x15, ES8311/ES7210, ADC battery
     board_waveshare_s3_18.c              1.8: SH8601/CO5300, FT3168/CST816, AXP2101
+    board_waveshare_s3_175c.c            1.75C: CO5300, CST9217, AXP2101 (Waveshare BSP)
   devices/sdkconfig.muse-waveshare-s3-*  board overlays
   tools/muse/secrets.py                  secrets → build sdkconfig
 secrets/                                 your token and keys (gitignored)
