@@ -48,3 +48,7 @@ CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=10
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 # Required by the BSP for the capacitive home button (unused by Muse).
 CONFIG_ESP_LCD_TOUCH_MAX_BUTTONS=1
+
+# ElevenLabs serves a cross-signed chain (GTS Root R1 x GlobalSign); without
+# this the x509 bundle lookup fails with "No matching trusted root".
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
